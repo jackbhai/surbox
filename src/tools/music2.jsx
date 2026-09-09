@@ -30,9 +30,15 @@ import { Spin, Err, Empty, Card, fmt } from '../ui/kit';
 import { Icon } from '../ui/icons';
 import { favourites, isFav, toggleFav, history, topPlayed, playlists,
          createPlaylist, deletePlaylist, addToPlaylist, removeFromPlaylist,
-         clearHistory, onLibrary, libraryStats } from '../core/library';
+         clearHistory, onLibrary, libraryStats, listenStats, fmtMins,
+         exportLibrary, importLibrary } from '../core/library';
 import { getSettings, setSetting, testProxy, usingBuiltin, BUILTIN_PROXY } from '../core/settings';
 import * as SRC from '../core/sources';
+import { downloads, downloadTrack, removeDownload, clearDownloads,
+         isDownloaded, isDownloading, onDownloads, downloadBytes, fmtBytes } from '../core/downloads';
+import { resolveAudio } from '../core/audio-resolve';
+import { getPreferences } from '../core/preferences';
+import { onInstallPrompt, triggerInstall, isStandalone } from '../core/pwa';
 import { HomeTab } from './music-home';
 
 const mmss = (s) => (!s ? '' : `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`);
@@ -147,6 +153,12 @@ function TrackList({ tracks, player, onPlay, loading, more, onMore, onRemove }) 
                 <button className="rowbtn" aria-label="Add to playlist"
                   onClick={(e) => { e.stopPropagation(); setAddFor(t); }}>
                   <Icon n="list" size={16} style={{ color: 'var(--fg3)' }} /></button>)}
+              {/* Quick "add to queue" — only while something is playing, so
+                  the row stays clean when the queue concept is meaningless. */}
+              {t.id && player?.track && (
+                <button className="rowbtn" aria-label="Add to queue" title="Add to queue"
+                  onClick={(e) => { e.stopPropagation(); player.addToQueue(t); }}>
+                  <Icon n="queue" size={16} style={{ color: 'var(--fg3)' }} /></button>)}
               {onRemove && (
                 <button className="rowbtn" aria-label="Remove from playlist"
                   onClick={(e) => { e.stopPropagation(); onRemove(t); }}>
@@ -158,7 +170,7 @@ function TrackList({ tracks, player, onPlay, loading, more, onMore, onRemove }) 
           </div>);
       })}
     </div>
-    {addFor && <AddToPlaylist track={addFor} onClose={() => setAddFor(null)} />}
+    {addFor && <AddToPlaylist track={addFor} onClose={() => setAddFor(null)} player={player} />}
     {onMore && <div ref={sentinel} style={{ height: 1 }} />}
     {loading && <Spin t="Loading more" />}
     {!loading && more === false && tracks.length > 20 &&
@@ -167,15 +179,37 @@ function TrackList({ tracks, player, onPlay, loading, more, onMore, onRemove }) 
   </>);
 }
 
-/** Small sheet: pick a playlist to add a track to, or make a new one. */
-function AddToPlaylist({ track, onClose }) {
+/** Small sheet: everything you can do with a track — queue it, radio it, or
+ *  file it in a playlist. One sheet instead of a row full of mystery icons. */
+function AddToPlaylist({ track, onClose, player }) {
   const [name, setName] = useState('');
+  const [radioBusy, setRadioBusy] = useState(false);
   const pls = playlists();
   const add = (id) => { addToPlaylist(id, track); onClose(); };
+  const startRadio = async () => {
+    if (radioBusy) return;
+    setRadioBusy(true);
+    try {
+      const list = await radioQueue(track, { limit: 30 });
+      if (list?.length) { player.setRadio(true); player.play(list[0], list); }
+      onClose();
+    } finally { setRadioBusy(false); }
+  };
   return (
     <div className="sheet-bg" onClick={onClose}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
         <div className="chead">Add &ldquo;{(track.title || '').slice(0, 30)}&rdquo; to…</div>
+        <div className="btnrow" style={{ marginTop: 0, marginBottom: 12 }}>
+          <button className="btn ghost sm" style={{ flex: 1 }} title="Play straight after the current song"
+            onClick={() => { player.playNext(track); onClose(); }}>
+            <Icon n="next" size={15} /> Play next</button>
+          <button className="btn ghost sm" style={{ flex: 1 }} title="Add to the end of the queue"
+            onClick={() => { player.addToQueue(track); onClose(); }}>
+            <Icon n="queue" size={15} /> Queue</button>
+          <button className="btn ghost sm" style={{ flex: 1 }} title="Endless radio from this song"
+            disabled={radioBusy} onClick={startRadio}>
+            {radioBusy ? <span className="spin-sm" /> : <Icon n="radio" size={15} />} Radio</button>
+        </div>
         {pls.length > 0 && (
           <div className="list" style={{ maxHeight: 220, overflowY: 'auto' }}>
             {pls.map((p) => (
@@ -213,6 +247,14 @@ function playList(player, list, i) {
 }
 
 /* ------------------------------------------------------------ search tab */
+/* -------------------------------------------------------------- search tab
+   Recent searches live next to the library — ten terms, deduped, newest
+   first. Voice search uses the platform recogniser (Chrome / Edge), set to
+   Indian English because that is who this app is for. */
+const K_SEARCHES = 'omni:searches';
+const readSearches = () => { try { return JSON.parse(localStorage.getItem(K_SEARCHES) || '[]'); } catch { return []; } };
+const writeSearches = (v) => { try { localStorage.setItem(K_SEARCHES, JSON.stringify(v)); } catch {} };
+
 function SearchTab({ player }) {
   const [q, setQ] = useState('babbu maan');
   const [tracks, setTracks] = useState(null);
@@ -222,9 +264,47 @@ function SearchTab({ player }) {
   const [focused, setFocused] = useState(false);
   const [more, setMore] = useState(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [recent, setRecent] = useState(readSearches);
+  const [listening, setListening] = useState(false);
   const nextRef = useRef(null);
   const seq = useRef(0);
   const abortRef = useRef(null);
+  const heardRef = useRef('');
+  const recogRef = useRef(null);
+
+  const saveSearch = (term) => {
+    const next = [term, ...readSearches().filter((x) => x !== term)].slice(0, 10);
+    writeSearches(next); setRecent(next);
+  };
+
+  /* Voice search. Interim results land in the box as they arrive so the user
+     sees the recogniser working; the actual search fires once, on the final
+     transcript. One tap while listening cancels. */
+  const micSearch = () => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { setErr('Voice search needs Chrome or Edge — type instead'); return; }
+    if (listening) { try { recogRef.current?.stop(); } catch {} return; }
+    const r = new SR();
+    recogRef.current = r;
+    r.lang = 'en-IN';
+    r.interimResults = true;
+    r.maxAlternatives = 1;
+    heardRef.current = '';
+    r.onresult = (e) => {
+      let txt = '';
+      for (const res of e.results) txt += res[0].transcript;
+      heardRef.current = txt;
+      setQ(txt);
+    };
+    r.onerror = () => setListening(false);
+    r.onend = () => {
+      setListening(false);
+      const s = heardRef.current.trim();
+      if (s) { setTips([]); setFocused(false); run(s); }
+    };
+    setListening(true);
+    try { r.start(); } catch { setListening(false); }
+  };
 
   const run = useCallback(async (term) => {
     const s = String(term || '').trim();
@@ -245,6 +325,7 @@ function SearchTab({ player }) {
         setTracks(r.tracks);
         nextRef.current = r.next;
         setMore(r.next ? true : false);
+        saveSearch(s);
         // Warm top 2 only
         r.tracks.slice(0, 2).forEach((t, i) => { if (t.id) { rememberTrack(t.id, t); prefetchAudio(t.id, i); } });
         setBusy(false);
@@ -316,6 +397,10 @@ function SearchTab({ player }) {
           placeholder="Any song, artist or album…" enterKeyHint="search" autoComplete="off" />
         {q && <button className="ip-x" onClick={() => { setQ(''); setTips([]); setTracks(null); }} aria-label="Clear">
           <Icon n="x" size={16} /></button>}
+        <button className="ip-x" onClick={micSearch} aria-label="Voice search"
+          title={listening ? 'Listening… tap to cancel' : 'Search by voice'}
+          style={{ color: listening ? 'var(--green)' : '' }}>
+          {listening ? <span className="dot" /> : <Icon n="mic" size={16} />}</button>
       </div>
       {focused && tips.length > 0 && (
         <div className="list" style={{ position: 'absolute', top: '100%', left: 0, right: 0,
@@ -329,6 +414,18 @@ function SearchTab({ player }) {
             </button>))}
         </div>)}
     </div>
+
+    {recent.length > 0 && (
+      <div className="cats" style={{ gap: 6 }}>
+        <span className="dim sm" style={{ display: 'flex', alignItems: 'center', gap: 4, flex: '0 0 auto' }}>
+          <Icon n="timer" size={12} /> Recent</span>
+        {recent.map((x) => (
+          <button key={x} className="cat" style={{ textTransform: 'none' }}
+            onClick={() => { setQ(x); setTips([]); setFocused(false); run(x); }}>{x}</button>))}
+        <button className="cat" aria-label="Clear search history" title="Clear search history"
+          onClick={() => { writeSearches([]); setRecent([]); }}>
+          <Icon n="trash" size={12} /></button>
+      </div>)}
 
     <div className="cats" style={{ gap: 6 }}>
       {QUICK.map((x) => (
@@ -800,7 +897,8 @@ function LibraryTab({ player }) {
 
     <div className="cats">
       {[['fav', 'Favourites'], ['recent', 'Recent'], ['top', 'Most played'],
-        ['lists', 'My playlists'], ['setup', 'Speed']].map(([v, l]) => (
+        ['down', 'Downloads'], ['stats', 'Stats'], ['lists', 'My playlists'],
+        ['setup', 'App']].map(([v, l]) => (
         <button key={v} className={`cat ${view === v ? 'on' : ''}`} onClick={() => setView(v)}>{l}</button>))}
     </div>
 
@@ -833,7 +931,9 @@ function LibraryTab({ player }) {
           </div>}
     </>)}
 
-    {view === 'setup' && <SpeedSetup />}
+    {view === 'down' && <DownloadsView player={player} />}
+    {view === 'stats' && <StatsView player={player} />}
+    {view === 'setup' && (<><SpeedSetup /><AppBits /></>)}
 
     {['fav', 'recent', 'top'].includes(view) && (<>
       {rows.length === 0
@@ -856,7 +956,192 @@ function LibraryTab({ player }) {
   </>);
 }
 
-/* --------------------------------------------------------- speed / proxy */
+/* ------------------------------------------------------------- downloads */
+/**
+ * Songs saved on this device. They play with no internet and start in ~0 ms;
+ * the player checks this store before it ever asks the network.
+ */
+function DownloadsView({ player }) {
+  const [, bump] = useState(0);
+  useEffect(() => onDownloads(() => bump((n) => n + 1)), []);
+  const rows = downloads();
+
+  return (<>
+    <div className="g3" style={{ marginBottom: 12 }}>
+      <div className="stat"><div className="v">{rows.length}</div><div className="l">Songs</div></div>
+      <div className="stat"><div className="v" style={{ fontSize: 20 }}>{fmtBytes(downloadBytes())}</div><div className="l">On device</div></div>
+      <div className="stat"><div className="v" style={{ color: 'var(--green)' }}>OFF</div><div className="l">Works offline</div></div>
+    </div>
+
+    {rows.length === 0
+      ? <Empty t="Nothing saved yet — play a song, then tap the download icon in the player" />
+      : (<>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+          <button className="btn sm" style={{ flex: 1 }}
+            onClick={() => playList(player, rows, 0)}>
+            <Icon n="play" size={15} /> Play all</button>
+          <button className="btn ghost sm"
+            onClick={() => { if (confirm(`Remove all ${rows.length} downloads?`)) clearDownloads(); }}>
+            <Icon n="trash" size={15} /> Clear all</button>
+        </div>
+        <div className="list">
+          {rows.map((t, i) => (
+            <div className="row" key={t.id} onClick={() => playList(player, rows, i)}
+              style={{ cursor: 'pointer' }}>
+              {t.art
+                ? <img src={t.art} alt="" loading="lazy"
+                    style={{ width: 46, height: 46, borderRadius: 9, objectFit: 'cover', flex: '0 0 auto' }} />
+                : <div style={{ width: 46, height: 46, borderRadius: 9, background: 'var(--s3)',
+                    display: 'grid', placeItems: 'center', flex: '0 0 auto', color: 'var(--green)' }}>
+                    <Icon n="download" size={18} /></div>}
+              <div className="main">
+                <b style={{ fontSize: 13.5 }}>{(t.title || '').slice(0, 54)}</b>
+                <span className="dim sm">
+                  {t.artist || 'Unknown artist'}{t.dur ? ` · ${mmss(t.dur)}` : ''} · {fmtBytes(t.size)}</span>
+              </div>
+              <span className="tag g" title="Plays offline">offline</span>
+              <button className="rowbtn" aria-label="Remove download"
+                onClick={(e) => { e.stopPropagation(); removeDownload(t.id); }}>
+                <Icon n="x" size={15} style={{ color: 'var(--fg3)' }} /></button>
+            </div>))}
+        </div>
+      </>)}
+  </>);
+}
+
+/* ------------------------------------------------------------------ stats */
+/**
+ * Listening time, not just play counts — the player measures wall-clock
+ * seconds while a track is actually audible.
+ */
+function StatsView({ player }) {
+  const s = listenStats();
+  const max = s.topArtists[0]?.s || 1;
+  return (<>
+    <div className="g3" style={{ marginBottom: 12 }}>
+      <div className="stat"><div className="v">{fmtMins(s.total)}</div><div className="l">All time</div></div>
+      <div className="stat"><div className="v">{fmtMins(s.week)}</div><div className="l">This week</div></div>
+      <div className="stat"><div className="v">{fmtMins(s.today)}</div><div className="l">Today</div></div>
+    </div>
+
+    {s.total === 0 && <Empty t="Play something — your listening time will show up here" />}
+
+    {s.topArtists.length > 0 && (<>
+      <div className="chead"><Icon n="smile" size={15} /> Top artists by listening time</div>
+      <div style={{ display: 'grid', gap: 10, margin: '12px 0 4px' }}>
+        {s.topArtists.map((a) => (
+          <div key={a.name}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, marginBottom: 4 }}>
+              <b style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</b>
+              <span className="dim" style={{ flex: '0 0 auto' }}>{fmtMins(a.s)}</span>
+            </div>
+            <div style={{ height: 5, borderRadius: 3, background: 'var(--s3)' }}>
+              <div style={{ height: 5, borderRadius: 3,
+                width: Math.max(6, Math.round((a.s / max) * 100)) + '%',
+                background: 'linear-gradient(90deg, var(--green), var(--cyan))' }} />
+            </div>
+          </div>))}
+      </div>
+    </>)}
+
+    {s.topTracks.length > 0 && (<>
+      <div className="chead" style={{ marginTop: 16 }}><Icon n="chart" size={15} /> Most listened</div>
+      <TrackList tracks={s.topTracks} player={player}
+        onPlay={(t, i) => playList(player, s.topTracks, i)} />
+    </>)}
+  </>);
+}
+
+/* -------------------------------------------------------------- app bits */
+/**
+ * Install-as-app, and one-file backup of everything personal (library,
+ * playlists, preferences, searches, listening time). Restore merges rather
+ * than replaces, so a restore on a used device never loses anything.
+ */
+function AppBits() {
+  const [canInstall, setCanInstall] = useState(false);
+  const [msg, setMsg] = useState('');
+  useEffect(() => onInstallPrompt(() => setCanInstall(true)), []);
+  const flash = (m) => { setMsg(m); setTimeout(() => setMsg(''), 2500); };
+
+  const backup = () => {
+    const d = {
+      app: 'SurBox', v: 1, at: new Date().toISOString(),
+      library: JSON.parse(exportLibrary()),
+      preferences: getPreferences(),
+      searches: (() => { try { return JSON.parse(localStorage.getItem('omni:searches') || '[]'); } catch { return []; } })(),
+      time: (() => { try { return JSON.parse(localStorage.getItem('omni:lib:time') || '{}'); } catch { return {}; } })(),
+      session: (() => { try { return JSON.parse(localStorage.getItem('omni:session') || 'null'); } catch { return null; } })(),
+    };
+    const blob = new Blob([JSON.stringify(d, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `surbox-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    flash('Backup downloaded');
+  };
+
+  const restore = (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    const rd = new FileReader();
+    rd.onload = () => {
+      try {
+        const d = JSON.parse(rd.result);
+        if (d?.app !== 'SurBox' || d?.v !== 1) throw new Error('Not a SurBox backup file');
+        if (d.library) importLibrary(JSON.stringify(d.library));
+        if (d.searches?.length) {
+          const cur = (() => { try { return JSON.parse(localStorage.getItem('omni:searches') || '[]'); } catch { return []; } })();
+          const merged = [...d.searches, ...cur].filter((x, i, a) => a.indexOf(x) === i).slice(0, 10);
+          localStorage.setItem('omni:searches', JSON.stringify(merged));
+        }
+        if (d.time?.total) {
+          try {
+            const cur = JSON.parse(localStorage.getItem('omni:lib:time') || '{}');
+            const t = { ...cur };
+            t.total = (t.total || 0) + (d.time.total || 0);
+            for (const [k, v] of Object.entries(d.time.tracks || {})) t.tracks = { ...t.tracks, [k]: (t.tracks?.[k] || 0) + v };
+            for (const [k, v] of Object.entries(d.time.artists || {})) t.artists = { ...t.artists, [k]: (t.artists?.[k] || 0) + v };
+            for (const [k, v] of Object.entries(d.time.days || {})) t.days = { ...t.days, [k]: (t.days?.[k] || 0) + v };
+            localStorage.setItem('omni:lib:time', JSON.stringify(t));
+          } catch {}
+        }
+        if (d.preferences && (d.preferences.languages?.length || d.preferences.artists?.length)) {
+          localStorage.setItem('omni:music-prefs', JSON.stringify(d.preferences));
+        }
+        flash('Restored — reopen Library to see it');
+      } catch (err) { flash(err.message || 'Restore failed'); }
+    };
+    rd.readAsText(f);
+  };
+
+  return (<>
+    <div className="hr" style={{ margin: '18px 0 12px' }} />
+    <div className="chead"><Icon n="box" size={16} /> App</div>
+    <div className="btnrow" style={{ marginTop: 10 }}>
+      {!isStandalone() && (canInstall
+        ? <button className="btn sm" onClick={() => triggerInstall()}><Icon n="download" size={15} /> Install as app</button>
+        : <span className="dim sm">Install: use your browser menu → "Add to Home screen"</span>)}
+      {isStandalone() && <span className="pill on"><Icon n="check" size={13} /> Installed</span>}
+    </div>
+    <div className="btnrow" style={{ marginTop: 8 }}>
+      <button className="btn ghost sm" onClick={backup}><Icon n="save" size={15} /> Backup everything</button>
+      <label className="btn ghost sm" style={{ cursor: 'pointer' }}>
+        <Icon n="refresh" size={15} /> Restore
+        <input type="file" accept="application/json,.json" onChange={restore}
+          style={{ display: 'none' }} /></label>
+    </div>
+    <p className="dim sm" style={{ marginTop: 8 }}>
+      Backup = favourites, playlists, history, preferences, search history and
+      listening time in one JSON file. Offline downloads stay on the device
+      they were saved on.</p>
+    {msg && <p className="sm" style={{ color: 'var(--green)', marginTop: 6 }}>{msg}</p>}
+  </>);
+}
+
+
 /**
  * The relay decides two things: how fast a song starts, and whether the full
  * catalogue (artists, albums, regional search) is available at all. One ships

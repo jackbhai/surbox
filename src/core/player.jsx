@@ -7,13 +7,20 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { lyricsPool } from './ytmusic';
 import { resolveAudio, prefetchAudio, prefetchNext, forgetAudio, isCached,
          pauseWarming, resumeWarming, rememberTrack } from './audio-resolve';
+import { getDownload } from './downloads';
 import { resolve } from './engine';
-import { notePlay } from './library';
+import { notePlay, noteListen } from './library';
 import { noteStation } from './sources';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const Ctx = createContext(null);
 export const usePlayer = () => useContext(Ctx);
+
+/** The last playing session, saved every few seconds — powers "Continue
+ *  listening" on the Home tab after a reload or an app restart. */
+export const lastSession = () => {
+  try { return JSON.parse(localStorage.getItem('omni:session') || 'null'); } catch { return null; }
+};
 
 const BANDS = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
 export const PRESETS = {
@@ -498,7 +505,13 @@ export function PlayerProvider({ children }) {
            catalogue by NAME — the two share no ids — so without this there is
            no fallback at all. */
         rememberTrack(t.id, { title: t.title, artist: t.artist, art: t.art, dur: t.dur });
-        const r = await resolveAudio(t.id, { onProgress: setStage });
+        /* A download answers before the network is even asked. The blob URL
+           is same-origin, so it plays in flight mode, starts in ~0 ms, and
+           the equaliser and visualiser read real samples from it. */
+        const dl = await getDownload(t.id);
+        const r = dl
+          ? { audio: dl, via: 'offline', approximate: false }
+          : await resolveAudio(t.id, { onProgress: setStage });
         if (clock) clearInterval(clock);
         if (stale()) return;          // the user moved on; leave their track alone
         setVia(r.via || '');
@@ -706,6 +719,56 @@ export function PlayerProvider({ children }) {
     });
   }, []);
 
+  /* ------------------------------------------------- queue editing
+     "Play next" and "Add to queue" were the two things a queue you cannot
+     touch cannot do. Both are pure queue splices — playback is untouched,
+     so they work mid-song with no interruption. */
+  const playNext = useCallback((t) => {
+    if (!t) return;
+    /* Nothing loaded: "next" is meaningless, so it just plays — the same
+       courtesy addToQueue extends, and the same reason. */
+    if (!queue.length || idx < 0) { play(t, [t]); return; }
+    setQueue((q) => {
+      if (!q.length) return [t];
+      const n = [...q];
+      n.splice(idx + 1, 0, t);
+      return n;
+    });
+  }, [idx, queue.length, play]);
+
+  const addToQueue = useCallback((ts) => {
+    const arr = (Array.isArray(ts) ? ts : [ts]).filter(Boolean);
+    if (!arr.length) return;
+    /* Nothing loaded yet: an "add" that silently sits in a dark queue looks
+       like a broken button. Start playback instead — the queue was empty,
+       so the first item IS next. */
+    if (!queue.length || idx < 0) { play(arr[0], arr); return; }
+    setQueue((q) => [...q, ...arr]);
+  }, [queue.length, idx, play]);
+
+  /** Remove an upcoming row. The playing row is refused (the UI disables it
+   *  anyway) so `idx` never has to chase a moving track. */
+  const removeAt = useCallback((i) => {
+    if (i === idx) return;
+    setQueue((q) => q.filter((_, j) => j !== i));
+    if (i < idx) setIdx((n) => n - 1);
+  }, [idx]);
+
+  /** Swap row i with its neighbour. Moving the current row is allowed —
+   *  the highlight travels with the song, not the slot. */
+  const moveInQueue = useCallback((i, dir) => {
+    const j = i + dir;
+    setQueue((q) => {
+      if (j < 0 || j >= q.length || i < 0 || i >= q.length) return q;
+      const n = [...q];
+      const tmp = n[i]; n[i] = n[j]; n[j] = tmp;
+      return n;
+    });
+    if (i === idx) setIdx(j);
+    else if (j === idx) setIdx(i);
+  }, [idx]);
+
+
   /** Turn endless radio on/off. When on, the queue never runs dry. */
   const setRadio = useCallback((on) => { autoRadio.current = !!on; }, []);
 
@@ -900,11 +963,66 @@ export function PlayerProvider({ children }) {
     enableEq().then(() => v.forEach((g, i) => chain.band(i, g)));
   }, [enableEq]);
 
+  /* ---------------------------------------------------- session + time
+     Two things are remembered while a song plays:
+     · WHERE the session was (queue, position) — saved every few seconds, so
+       the Home tab can offer "Continue listening" right where you left off,
+       even after a full app restart.
+     · HOW LONG was actually audible — wall-clock between timeupdates while
+       not paused, flushed to the library in batches. A play is a tap;
+       minutes are what the Stats view is made of. */
+  const posRef = useRef(0);
+  const listenedRef = useRef(0);
+  const lastTickRef = useRef(0);
+
+  useEffect(() => {
+    const flush = () => {
+      if (listenedRef.current >= 1 && track) {
+        noteListen(track, listenedRef.current);
+        listenedRef.current = 0;
+      }
+    };
+    const id = setInterval(flush, 10000);          // batch writes
+    const save = () => {
+      if (!track || idx < 0) return;
+      try {
+        localStorage.setItem('omni:session', JSON.stringify({
+          track, queue: queue.slice(0, 60), idx, pos: posRef.current, ts: Date.now(),
+        }));
+      } catch {}
+    };
+    const sid = setInterval(save, 5000);            // keep "resume from here" fresh
+    const onHide = () => { flush(); save(); };
+    addEventListener('pagehide', onHide);
+    return () => {
+      clearInterval(id); clearInterval(sid);
+      removeEventListener('pagehide', onHide);
+      flush(); save();
+    };
+  }, [track, idx, queue]);
+
+  /** Pick the last session back up: same queue, same song, same second. */
+  const resumeSession = useCallback(async () => {
+    let s = null;
+    try { s = JSON.parse(localStorage.getItem('omni:session') || 'null'); } catch {}
+    if (!s?.track || !Array.isArray(s.queue) || s.idx < 0) return false;
+    await play(s.track, s.queue);
+    if (s.pos > 5) {
+      const el = audio.current;
+      const apply = () => { try { el.currentTime = s.pos; } catch {} };
+      if (!el) return true;
+      if (el.readyState >= 1) apply();
+      else el.addEventListener('loadedmetadata', apply, { once: true });
+    }
+    return true;
+  }, [play]);
+
   const value = {
     audio, yt, stage, track, playing, loading, pos, dur, queue, idx, shuffle, repeat, full, miniHidden, err, lyrics, via,
     canViz,
     eq, preset, bass, treb, comp, rate, sleep,
     play, toggle, step, seek, retry, extendQueue, setRadio, setShuffle, setRepeat, setFull, setMiniHidden, setSleep, applyPreset,
+    playNext, addToQueue, removeAt, moveInQueue, resumeSession,
     eqOn, enableEq,
     stop: () => {
       try { audio.current?.pause(); } catch {}
@@ -928,7 +1046,20 @@ export function PlayerProvider({ children }) {
     <Ctx.Provider value={value}>
       <audio
         ref={audio} preload="none"
-        onTimeUpdate={(e) => { setPos(e.target.currentTime); setDur(e.target.duration || 0); }}
+        onTimeUpdate={(e) => {
+          const el = e.target;
+          setPos(el.currentTime); setDur(el.duration || 0);
+          posRef.current = el.currentTime;
+          /* Listening time = wall-clock between ticks while actually audible.
+             A seek shows up as a negative or huge gap and is ignored, so
+             scrubbing a track for an hour does not count as listening. */
+          const now = Date.now();
+          if (!el.paused && lastTickRef.current) {
+            const dt = (now - lastTickRef.current) / 1000;
+            if (dt > 0 && dt < 2) listenedRef.current += dt;
+          }
+          lastTickRef.current = now;
+        }}
         onEnded={() => { if (repeat === 'one') { audio.current.currentTime = 0; audio.current.play(); } else step(1); }}
         onPause={() => setPlaying(false)} onPlay={() => setPlaying(true)}
         onError={() => {

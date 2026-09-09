@@ -11,6 +11,7 @@
 const K_FAV  = 'omni:lib:fav';
 const K_HIST = 'omni:lib:hist';
 const K_PL   = 'omni:lib:playlists';
+const K_TIME = 'omni:lib:time';     // seconds actually listened, per track/artist/day
 const MAX_HIST = 200;
 
 const subs = new Set();
@@ -71,6 +72,63 @@ export function topPlayed(n = 20) {
     .slice(0, n)
     .map(([id, c]) => ({ ...byId.get(id), plays: c }))
     .filter((t) => t.id);
+}
+
+/* ------------------------------------------------------- listening time */
+/* A play is a tap; listening time is what the player measured. The player
+   flushes seconds here every few seconds while a track is actually audible,
+   so the Stats view can say "3.4 hours this week" instead of "47 plays". */
+
+const readTime = () => read(K_TIME, { total: 0, tracks: {}, artists: {}, days: {} });
+
+/**
+ * Add listened seconds. No emit() storm — the player calls this in batches,
+ * and the Library view re-reads when it mounts anyway.
+ */
+export function noteListen(track, secs) {
+  if (!track?.id || !secs || secs <= 0) return;
+  const d = readTime();
+  const day = new Date().toISOString().slice(0, 10);
+  d.total = Math.round((d.total || 0) + secs);
+  d.tracks[track.id] = Math.round((d.tracks[track.id] || 0) + secs);
+  const a = (track.artist || '').trim();
+  if (a) d.artists[a] = Math.round((d.artists[a] || 0) + secs);
+  d.days[day] = Math.round((d.days[day] || 0) + secs);
+  // keep the day log to a year — a stat nobody scrolls is just bytes
+  const days = Object.keys(d.days).sort();
+  while (days.length > 366) { delete d.days[days.shift()]; }
+  try { localStorage.setItem(K_TIME, JSON.stringify(d)); } catch {}
+}
+
+/** "1h 24m" / "46m" / "2.4h" — compact, for the stats cards. */
+export const fmtMins = (s) => {
+  const m = Math.round((s || 0) / 60);
+  if (m < 60) return m + 'm';
+  const h = m / 60;
+  return (h >= 10 ? Math.round(h) : h.toFixed(1)) + 'h';
+};
+
+/** Everything the Stats view shows, in one read. */
+export function listenStats() {
+  const d = readTime();
+  const today = new Date().toISOString().slice(0, 10);
+  let week = 0;
+  for (let i = 0; i < 7; i++) {
+    const day = new Date(Date.now() - i * 864e5).toISOString().slice(0, 10);
+    week += d.days[day] || 0;
+  }
+  const topArtists = Object.entries(d.artists || {})
+    .sort((a, b) => b[1] - a[1]).slice(0, 5)
+    .map(([name, s]) => ({ name, s }));
+  const topTracks = Object.entries(d.tracks || {})
+    .sort((a, b) => b[1] - a[1]).slice(0, 5)
+    .map(([id, s]) => ({ id, s }));
+  const byId = new Map(history().map((t) => [t.id, t]));
+  return {
+    total: d.total || 0, today: d.days[today] || 0, week,
+    topArtists,
+    topTracks: topTracks.map((t) => ({ ...t, ...(byId.get(t.id) || { id: t.id, title: 'Unknown track' }) })),
+  };
 }
 
 /* ------------------------------------------------------------- playlists */

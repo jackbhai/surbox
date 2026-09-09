@@ -1,6 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { usePlayer, PRESETS, chain } from '../core/player';
 import { isFav, toggleFav } from '../core/library';
+import { downloadTrack, removeDownload, isDownloaded, isDownloading, onDownloads } from '../core/downloads';
+import { resolveAudio } from '../core/audio-resolve';
+import { radioQueue } from '../core/music';
 import { Icon } from './icons';
 
 const mmss = (s) => (!s || !isFinite(s)) ? '0:00'
@@ -138,6 +141,34 @@ export function FullPlayer() {
 
   const t0 = p?.track;
   useEffect(() => { setFav(isFav(t0?.id)); }, [t0?.id]);   // eslint-disable-line
+
+  /* Offline download: the button reflects the three states — save, saving,
+     saved — and a saved track is one tap from being removed again. */
+  const [, dlBump] = useState(0);
+  useEffect(() => onDownloads(() => dlBump((n) => n + 1)), []);
+  const [dlErr, setDlErr] = useState('');
+  const dl = async (t) => {
+    if (!t?.id) return;
+    setDlErr('');
+    if (isDownloaded(t.id)) {
+      if (confirm(`Remove "${t.title || 'this track'}" from downloads?`)) await removeDownload(t.id);
+      return;
+    }
+    try { await downloadTrack(t, { resolveAudio }); }
+    catch (e) { setDlErr(e?.message || 'Download failed — try again'); }
+  };
+
+  /* Song radio: build a queue of similar material around what is playing and
+     hand it to the player with endless radio on. */
+  const [radioBusy, setRadioBusy] = useState(false);
+  const songRadio = async (t) => {
+    if (!t || radioBusy) return;
+    setRadioBusy(true);
+    try {
+      const list = await radioQueue(t, { limit: 30 });
+      if (list?.length) { p.setRadio(true); p.play(list[0], list); p.setFull(true); }
+    } finally { setRadioBusy(false); }
+  };
 
   /* Share uses the OS sheet where there is one and falls back to the
      clipboard, so it works on a phone and on a desktop without branching in
@@ -468,6 +499,20 @@ export function FullPlayer() {
                   <span className="dim sm">{q.artist || ''}</span>
                 </div>
                 {!!q.dur && <span className="dim mono sm">{mmss(q.dur)}</span>}
+                {/* Reorder and remove — the queue is a list you own, not a
+                    readout. The playing row refuses both so `idx` never has
+                    to chase a track that moved under it. */}
+                <span style={{ display: 'flex', gap: 2, flex: '0 0 auto' }} onClick={(e) => e.stopPropagation()}>
+                  <button className="rowbtn" aria-label="Move up" disabled={i === p.idx}
+                    onClick={() => p.moveInQueue(i, -1)} style={{ opacity: i === p.idx ? .25 : 1 }}>
+                    <Icon n="up" size={14} /></button>
+                  <button className="rowbtn" aria-label="Move down" disabled={i === p.idx}
+                    onClick={() => p.moveInQueue(i, 1)} style={{ opacity: i === p.idx ? .25 : 1 }}>
+                    <Icon n="down" size={14} /></button>
+                  <button className="rowbtn" aria-label="Remove from queue" disabled={i === p.idx}
+                    onClick={() => p.removeAt(i)} style={{ opacity: i === p.idx ? .25 : 1 }}>
+                    <Icon n="x" size={14} /></button>
+                </span>
               </div>))}
           </div>)}
       </div>
@@ -558,9 +603,21 @@ export function FullPlayer() {
             <Icon n={fav ? 'staron' : 'star'} size={15} /></button>
           <button className="btn ghost sm" aria-label="Share" onClick={share}>
             <Icon n={shared ? 'check' : 'link'} size={15} /></button>
-          {t.dlUrl && <a className="btn sm" href={t.dlUrl} download target="_blank" rel="noreferrer"
-            aria-label="Download"><Icon n="download" size={16} /></a>}
+          {/* Song radio — more music like the track that is on now. */}
+          <button className="btn ghost sm" aria-label="Song radio" title="Play similar songs"
+            disabled={radioBusy} onClick={() => songRadio(t)}
+            style={{ opacity: radioBusy ? .5 : 1 }}>
+            {radioBusy ? <span className="spin-sm" /> : <Icon n="radio" size={15} />}</button>
+          {/* Offline save — the bytes live on the device, so the song plays
+              with no internet at all. Tap again to remove. */}
+          {t.id && (
+            <button className="btn ghost sm" aria-label="Download for offline"
+              title={isDownloaded(t.id) ? 'Saved offline — tap to remove' : 'Save offline'}
+              disabled={isDownloading(t.id)} onClick={() => dl(t)}
+              style={{ color: isDownloaded(t.id) ? 'var(--green)' : '' }}>
+              {isDownloading(t.id) ? <span className="spin-sm" /> : <Icon n="download" size={15} />}</button>)}
         </div>
+        {dlErr && <div className="err" style={{ marginTop: 8 }}><p>{dlErr}</p></div>}
         {sleepOpen && (
           <div className="btnrow" style={{ justifyContent: 'center' }}>
             {[0, 15, 30, 45, 60].map((m) => (

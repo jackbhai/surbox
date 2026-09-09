@@ -11,10 +11,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Icon } from '../ui/icons';
 import { Card, Spin, Empty, Err } from '../ui/kit';
-import { usePlayer } from '../core/player';
+import { usePlayer, lastSession } from '../core/player';
 import { searchMusic } from '../core/music';
 import { catalogueReady, searchCatalogue, toPlayableList, TOP_ARTISTS } from '../core/catalogue';
 import { prefetchAudio, rememberTrack } from '../core/audio-resolve';
+import { listenStats } from '../core/library';
 import {
   getPreferences, hasPreferences, buildPreferenceQuery,
   getSuggestedArtists, AVAILABLE_LANGUAGES, AVAILABLE_MOODS,
@@ -171,6 +172,42 @@ export function HomeTab({ player }) {
     if (nx?.id) { rememberTrack(nx.id, nx); prefetchAudio(nx.id, 0); }
   };
 
+  /* ---- Continue listening ---- */
+  const [session] = useState(() => lastSession());
+  const freshSession = session?.track && (Date.now() - (session.ts || 0) < 7 * 864e5);
+
+  /* ---- Daily Mix ----
+     Built on demand from what this device actually plays: a random artist you
+     spend real time on, your favourite artists, woven together with favourites
+     and recent plays. Different every tap — that is the point of a mix. */
+  const [mixBusy, setMixBusy] = useState(false);
+  const buildMix = async () => {
+    if (mixBusy) return;
+    setMixBusy(true);
+    try {
+      const favs = favourites();
+      const seedPool = [
+        ...listenStats().topArtists.map((a) => a.name),
+        ...(prefs.artists || []),
+        ...[...new Set(favs.map((t) => t.artist).filter(Boolean))],
+      ].filter(Boolean);
+      const pick = seedPool.length
+        ? seedPool[Math.floor(Math.random() * seedPool.length)]
+        : ['trending', 'top hits', 'punjabi hits'][Math.floor(Math.random() * 3)];
+      const parts = [];
+      try {
+        const r = await searchMusic(pick, { deep: false });
+        if (r?.tracks?.length) parts.push(...r.tracks.slice(0, 15));
+      } catch {}
+      const seen = new Set(parts.map((t) => t.id));
+      for (const f of favs) if (f.id && !seen.has(f.id)) { parts.push(f); seen.add(f.id); }
+      for (const h of history().slice(0, 8)) if (h.id && !seen.has(h.id)) { parts.push(h); seen.add(h.id); }
+      const mix = parts.filter(Boolean).sort(() => Math.random() - 0.5);
+      if (mix.length) { player.setRadio(true); playList(mix, 0); }
+    } finally { setMixBusy(false); }
+  };
+  const hasMixMaterial = history().length > 0 || favourites().length > 0;
+
   /* ---- Setup screen ---- */
   if (showSetup) {
     return (
@@ -248,6 +285,43 @@ export function HomeTab({ player }) {
 
   /* ---- Personalized home ---- */
   return (<>
+    {/* Continue listening — the last session, one tap from where it stopped */}
+    {!player.track && freshSession && (
+      <Card>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          {session.track.art
+            ? <img src={session.track.art} alt="" style={{ width: 48, height: 48, borderRadius: 10, objectFit: 'cover', flex: '0 0 auto' }} />
+            : <div style={{ width: 48, height: 48, borderRadius: 10, background: 'var(--s3)', display: 'grid', placeItems: 'center', flex: '0 0 auto', color: 'var(--green)' }}>
+                <Icon n="music" size={20} /></div>}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="dim sm" style={{ marginBottom: 2 }}>Continue listening</div>
+            <b style={{ fontSize: 14, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {session.track.title || 'Untitled'}</b>
+            <span className="dim sm" style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {session.track.artist || ''}</span>
+          </div>
+          <button className="btn sm" onClick={() => player.resumeSession()}>
+            <Icon n="play" size={15} /> Resume</button>
+        </div>
+      </Card>)}
+
+    {/* Daily Mix */}
+    {hasMixMaterial && (
+      <Card>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          <div style={{ width: 48, height: 48, borderRadius: 12, flex: '0 0 auto',
+            background: 'linear-gradient(135deg, var(--green), var(--cyan))',
+            display: 'grid', placeItems: 'center', color: '#000' }}>
+            <Icon n="bolt" size={22} /></div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <b style={{ fontSize: 14 }}>Your Daily Mix</b>
+            <div className="dim sm">Built from what you actually play — different every time</div>
+          </div>
+          <button className="btn sm" disabled={mixBusy} onClick={buildMix}>
+            {mixBusy ? <span className="spin-sm" /> : <><Icon n="play" size={15} /> Play</>}</button>
+        </div>
+      </Card>)}
+
     {/* Header with edit button */}
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
       <Icon n="cog" size={18} style={{ color: 'var(--green)' }} />
