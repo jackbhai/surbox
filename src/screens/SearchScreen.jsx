@@ -23,6 +23,13 @@ const writeSearches = (v) => { try { localStorage.setItem(K_SEARCHES, JSON.strin
 const QUICK = ['babbu maan', 'sidhu moose wala', 'diljit dosanjh', 'arijit singh',
   'karan aujla', 'ap dhillon', 'coke studio', 'shubh', 'nusrat', 'lofi punjabi'];
 
+/* Browse-all tiles: each its own hue, each a one-tap queue. */
+const BROWSE = [
+  ['Party', 'bolt'], ['Chill', 'moon'], ['Workout', 'bolt'], ['Romantic', 'heart'],
+  ['Sleep', 'moon'], ['Focus', 'sparkle'], ['Bollywood', 'film'], ['Punjabi', 'music'],
+  ['Sufi', 'star'], ['Lofi', 'wave'], ['Hip-Hop', 'disc'], ['Retro 90s', 'timer'],
+];
+
 export default function SearchScreen() {
   const player = usePlayer();
   const [q, setQ] = useState('');
@@ -182,6 +189,21 @@ export default function SearchScreen() {
           {QUICK.map((x) => (
             <button key={x} className="cat" style={{ textTransform: 'none' }}
               onClick={() => { setQ(x); run(x); }}>{x}</button>))}
+        </div>
+        <SectionHead icon="grid" title="Browse all" />
+        <div className="bgrid">
+          {BROWSE.map(([term, icon], i) => {
+            const h = (i * 47 + 210) % 360;
+            return (
+              <button key={term} className="btile" style={{
+                background: `linear-gradient(145deg, hsl(${h},62%,34%), hsl(${(h + 40) % 360},70%,16%))`,
+                animationDelay: `${i * 35}ms`,
+              }} onClick={() => { setQ(term); run(term); }}>
+                <span className="ink" />
+                <span className="glyph"><Icon n={icon} size={22} /></span>
+                <span>{term}</span>
+              </button>);
+          })}
         </div>
       </>)}
 

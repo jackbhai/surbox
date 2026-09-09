@@ -18,6 +18,7 @@ import {
   clearHistory, onLibrary, libraryStats,
 } from '../core/library';
 import { TrackList, DownloadsView, StatsView, SpeedSetup, AppBits } from '../tools/music2';
+import { downloadCount } from '../core/downloads';
 
 const SEGS = [
   ['songs', 'Songs'], ['lists', 'Playlists'], ['down', 'Downloads'],
@@ -50,6 +51,21 @@ export default function LibraryScreen({ initial = 'songs' }) {
 
       {/* ------------------------------------------------------- songs */}
       {seg === 'songs' && (<>
+        {/* shortcuts — the three places people open the library FOR */}
+        <div className="libcards">
+          <button className="libcard" style={{ animationDelay: '0ms' }} onClick={() => setSongView('fav')}>
+            <span className="cv c1"><Icon n="staron" size={26} /><b>{favs.length}</b></span>
+            <span className="tx"><b>Liked Songs</b><small>The ones you never lose</small></span>
+          </button>
+          <button className="libcard" style={{ animationDelay: '60ms' }} onClick={() => setSeg('down')}>
+            <span className="cv c2"><Icon n="download" size={26} /><b>{downloadCount()}</b></span>
+            <span className="tx"><b>Downloads</b><small>Plays offline</small></span>
+          </button>
+          <button className="libcard" style={{ animationDelay: '120ms' }} onClick={() => setSongView('top')}>
+            <span className="cv c3"><Icon n="chart" size={26} /><b>{top.length}</b></span>
+            <span className="tx"><b>On Repeat</b><small>Your most played</small></span>
+          </button>
+        </div>
         <div className="cats" style={{ marginBottom: 12 }}>
           {[['fav', 'Favourites'], ['recent', 'Recent'], ['top', 'Most played']].map(([v, l]) => (
             <button key={v} className={`cat ${songView === v ? 'on' : ''}`} onClick={() => setSongView(v)}>{l}</button>))}

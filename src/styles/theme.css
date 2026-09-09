@@ -1286,3 +1286,144 @@ input[type="color"] {
 .rowbtn{transition:transform .12s, color .15s}
 .rowbtn:hover{color:var(--fg)}
 .rowbtn:active{transform:scale(.85)}
+
+/* ═══════════════════ v2.1 — MASTER-PROMPT ALIGNMENT ═══════════════════
+   Cinematic hero, emotional player, library shortcuts, browse grid,
+   night mode — the best of the reference spec, in SurBox's own accent. */
+
+/* ---------- cinematic hero ---------- */
+.sb-hero{position:relative;border-radius:24px;overflow:hidden;margin-top:16px;cursor:pointer;
+  border:1px solid rgba(255,255,255,.07);box-shadow:0 16px 44px rgba(0,0,0,.55);
+  animation:sb-rise .45s ease both;transition:transform .16s}
+.sb-hero:active{transform:scale(.98)}
+.sb-hero .bgimg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.sb-hero .shade{position:absolute;inset:0;
+  background:linear-gradient(180deg, rgba(0,0,0,.18) 0%, rgba(0,0,0,.45) 55%, rgba(0,0,0,.88) 100%)}
+.sb-hero .inner{position:relative;padding:74px 20px 18px;min-height:190px;display:flex;
+  flex-direction:column;justify-content:flex-end;gap:6px}
+.sb-hero .kick{font-size:10px;font-weight:800;letter-spacing:2.6px;color:var(--cyan);
+  text-transform:uppercase;text-shadow:0 2px 8px rgba(0,0,0,.8)}
+.sb-hero h3{margin:0;font-family:var(--font-display);font-size:31px;line-height:1.02;
+  letter-spacing:1.6px;color:#fff;text-shadow:0 4px 18px rgba(0,0,0,.75)}
+.sb-hero p{margin:0;font-size:12.5px;color:rgba(255,255,255,.82);text-shadow:0 2px 8px rgba(0,0,0,.7)}
+.sb-hero .cta{align-self:flex-start;display:inline-flex;align-items:center;gap:7px;margin-top:10px;
+  padding:11px 20px;border:0;border-radius:999px;cursor:pointer;color:#000;
+  font:800 13px/1 var(--font-body);letter-spacing:.4px;
+  background:linear-gradient(100deg,var(--green),var(--cyan));
+  box-shadow:0 8px 24px rgba(0,0,0,.5), 0 0 18px rgba(0,255,156,.25);transition:transform .14s}
+.sb-hero .cta:active{transform:scale(.95)}
+
+/* ---------- night mode hero ---------- */
+.night-hero{position:relative;border-radius:24px;overflow:hidden;margin-top:16px;cursor:pointer;
+  border:1px solid rgba(123,92,255,.25);box-shadow:0 16px 44px rgba(0,0,0,.6);
+  animation:sb-rise .45s ease both}
+.night-hero .sky{position:absolute;inset:0;
+  background:
+    radial-gradient(420px 190px at 78% 8%, rgba(123,92,255,.32), transparent 65%),
+    radial-gradient(320px 170px at 12% 90%, rgba(0,229,255,.14), transparent 60%),
+    linear-gradient(180deg, #06040D 0%, #030208 70%, #000 100%)}
+.night-hero .stars{position:absolute;inset:0;opacity:.75;
+  background-image:
+    radial-gradient(1.6px 1.6px at 18% 22%, #fff, transparent),
+    radial-gradient(1.2px 1.2px at 64% 12%, #fff, transparent),
+    radial-gradient(1.8px 1.8px at 82% 30%, #D9CCFF, transparent),
+    radial-gradient(1.1px 1.1px at 32% 40%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 48% 16%, #fff, transparent),
+    radial-gradient(1.2px 1.2px at 90% 18%, #fff, transparent),
+    radial-gradient(1.4px 1.4px at 8% 55%, #BEB3E8, transparent)}
+.night-hero .ridge{position:absolute;left:0;right:0;bottom:0;height:74px;
+  background:linear-gradient(180deg, transparent, rgba(0,0,0,.9)),
+  linear-gradient(115deg, transparent 42%, #0A0714 43%, #05030B 100%);
+  clip-path:polygon(0 78%, 14% 52%, 26% 66%, 40% 34%, 54% 58%, 68% 26%, 82% 50%, 100% 36%, 100% 100%, 0 100%)}
+.night-hero .inner{position:relative;padding:56px 20px 16px;min-height:186px;display:flex;
+  flex-direction:column;justify-content:flex-end;gap:6px}
+.night-hero .kick{font-size:10px;font-weight:800;letter-spacing:2.6px;color:#B99CFF;text-transform:uppercase}
+.night-hero h3{margin:0;font-family:var(--font-display);font-size:34px;line-height:1;letter-spacing:1.8px;color:#F4EFFF}
+.night-hero p{margin:0;font-size:12.5px;color:#B9AED6;line-height:1.55}
+.night-hero .cta{align-self:flex-start;display:inline-flex;align-items:center;gap:7px;margin-top:10px;
+  padding:11px 20px;border:0;border-radius:999px;cursor:pointer;color:#000;
+  font:800 13px/1 var(--font-body);
+  background:linear-gradient(100deg,#B99CFF,#7B5CFF);box-shadow:0 8px 24px rgba(123,92,255,.35)}
+.night-hero .quote{margin:12px 0 0;font-size:10.5px;font-style:italic;color:#6F6489;line-height:1.6}
+
+/* ---------- avatar button ---------- */
+.avbtn{width:40px;height:40px;border-radius:50%;border:1.5px solid var(--line2);cursor:pointer;
+  background:linear-gradient(135deg,var(--s2),var(--s3));color:var(--green);
+  display:grid;place-items:center;transition:border-color .2s, transform .13s}
+.avbtn:active{transform:scale(.92)}
+.avbtn:hover{border-color:var(--green)}
+
+/* ---------- library shortcut cards ---------- */
+.libcards{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px}
+.libcard{display:flex;flex-direction:column;gap:9px;padding:0;border:0;background:none;cursor:pointer;
+  text-align:left;animation:sb-rise .35s ease both}
+.libcard:active{transform:scale(.96)}
+.libcard .cv{height:74px;border-radius:16px;display:grid;place-items:center;color:#fff;position:relative;
+  box-shadow:0 8px 22px rgba(0,0,0,.4)}
+.libcard .cv.c1{background:linear-gradient(135deg,#00C77A,#004D3A)}
+.libcard .cv.c2{background:linear-gradient(135deg,#00B4CC,#00394D)}
+.libcard .cv.c3{background:linear-gradient(135deg,#7B5CFF,#2E1D66)}
+.libcard .cv b{position:absolute;right:9px;bottom:7px;font-size:11px;color:rgba(255,255,255,.85);
+  font-family:var(--font-mono)}
+.libcard .tx b{display:block;font-size:12.5px;line-height:1.25}
+.libcard .tx small{display:block;font-size:10px;color:var(--fg3);margin-top:2px}
+
+/* ---------- browse grid (search idle) ---------- */
+.bgrid{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+.btile{position:relative;height:92px;border:0;border-radius:16px;cursor:pointer;overflow:hidden;
+  display:flex;align-items:flex-end;padding:12px;color:#fff;font:700 13.5px/1.2 var(--font-body);
+  text-align:left;transition:transform .13s;box-shadow:0 8px 22px rgba(0,0,0,.35)}
+.btile:active{transform:scale(.96)}
+.btile .ink{position:absolute;inset:0;background:linear-gradient(200deg, rgba(255,255,255,.14), rgba(0,0,0,.62))}
+.btile .glyph{position:absolute;top:9px;right:10px;opacity:.85;filter:drop-shadow(0 2px 6px rgba(0,0,0,.5))}
+.btile span{position:relative;text-shadow:0 2px 8px rgba(0,0,0,.6)}
+
+/* ---------- player: labeled secondary actions ---------- */
+.lacts{display:flex;justify-content:space-around;margin-top:14px}
+.lacts button{display:flex;flex-direction:column;align-items:center;gap:5px;background:none;border:0;
+  color:var(--fg3);cursor:pointer;font:600 9.5px/1 var(--font-body);letter-spacing:.8px;
+  text-transform:uppercase;padding:6px 10px;border-radius:12px;transition:color .18s, background .18s}
+.lacts button:hover{color:var(--fg);background:rgba(255,255,255,.04)}
+.lacts button.on{color:var(--green)}
+.lacts button .wic{width:38px;height:38px;border-radius:14px;display:grid;place-items:center;
+  border:1px solid var(--line2);background:rgba(255,255,255,.035)}
+.lacts button.on .wic{border-color:rgba(0,255,156,.35);background:rgba(0,255,156,.08)}
+
+/* ---------- up next ---------- */
+.upnext{display:flex;align-items:center;gap:10px;margin-top:13px;padding:9px 11px;border-radius:14px;
+  background:rgba(255,255,255,.032);border:1px solid var(--line)}
+.upnext .lbl{font-size:9px;font-weight:800;letter-spacing:1.8px;color:var(--fg3);flex:1}
+.upnext .lbl b{display:block;font-size:12px;font-weight:600;color:var(--fg);letter-spacing:0;
+  text-transform:none;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.upnext .lbl span{display:block;font-size:10px;color:var(--fg3);margin-top:1px}
+.upnext img{width:40px;height:40px;border-radius:9px;object-fit:cover;flex:0 0 auto}
+.upnext .ph{width:40px;height:40px;border-radius:9px;background:var(--s3);display:grid;place-items:center;
+  flex:0 0 auto;color:var(--fg3)}
+
+/* ---------- player glow upgrades ---------- */
+.full .cbtn.big{width:66px;height:66px;border-radius:50%;
+  background:linear-gradient(135deg,var(--green),var(--cyan));color:#000;
+  box-shadow:0 10px 30px rgba(0,255,156,.35), 0 0 0 5px rgba(0,255,156,.09), 0 0 0 5.5px rgba(0,0,0,.85)}
+.disc-stage{position:relative}
+.disc-stage::before{content:'';position:absolute;inset:-12% -8%;border-radius:50%;z-index:0;
+  background:radial-gradient(closest-side, rgba(0,255,156,.16), rgba(0,229,255,.08) 55%, transparent 75%);
+  filter:blur(14px);pointer-events:none}
+[data-theme="violet"] .disc-stage::before{background:radial-gradient(closest-side, rgba(177,140,255,.2), rgba(123,92,255,.1) 55%, transparent 75%)}
+[data-theme="violet"] .full .cbtn.big{box-shadow:0 10px 30px rgba(139,108,255,.4), 0 0 0 5px rgba(177,140,255,.1), 0 0 0 5.5px rgba(0,0,0,.85)}
+[data-theme="violet"] .sb-hero .cta, [data-theme="violet"] .hero-mix .go, [data-theme="violet"] .hero-mix .ic,
+[data-theme="violet"] .sb-now .ctl .pp, [data-theme="violet"] .shelfcard .cv .play{background:linear-gradient(135deg,#B99CFF,#7B5CFF)}
+
+/* glowing seek thumb */
+.full .seek::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;
+  background:#fff;box-shadow:0 0 0 4px rgba(0,255,156,.22), 0 0 14px 2px rgba(0,255,156,.55);cursor:pointer}
+.full .seek::-moz-range-thumb{width:14px;height:14px;border:0;border-radius:50%;background:#fff;
+  box-shadow:0 0 0 4px rgba(0,255,156,.22), 0 0 14px 2px rgba(0,255,156,.55);cursor:pointer}
+[data-theme="violet"] .full .seek::-webkit-slider-thumb{box-shadow:0 0 0 4px rgba(177,140,255,.25), 0 0 14px 2px rgba(139,108,255,.6)}
+[data-theme="violet"] .full .seek::-moz-range-thumb{box-shadow:0 0 0 4px rgba(177,140,255,.25), 0 0 14px 2px rgba(139,108,255,.6)}
+
+/* lyrics tab: artwork-blur ambience */
+.lyrics-blur{position:absolute;inset:-24px -18px;z-index:0;overflow:hidden;border-radius:20px;pointer-events:none}
+.lyrics-blur img{width:100%;height:100%;object-fit:cover;filter:blur(46px) brightness(.32) saturate(1.4);transform:scale(1.3)}
+.lyrics-blur .ph{width:100%;height:100%;background:var(--s2);filter:blur(46px);opacity:.5}
+.full-body .lyrics{position:relative;z-index:1}
+.btile{animation:sb-rise .35s ease both}

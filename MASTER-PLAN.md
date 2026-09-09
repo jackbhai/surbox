@@ -6,6 +6,28 @@ UI first (v2 shell ✅), then features in phases. Status legend:
 
 ---
 
+## 0. Reference-spec alignment — ✅ v2.1 SHIPPED
+
+The reference master prompt ("Ultra-Premium AMOLED Music App") was audited
+against SurBox v2. Adopted, adapted to SurBox's own identity:
+
+| From the spec | SurBox version | Status |
+|---|---|---|
+| Cinematic hero (artwork edge-to-edge + CTA) | Home hero merges Daily Mix + featured art, "SOUNDS BEYOND LIMITS" | ✅ |
+| Good Night / sleep mode | 21:00–05:00 the hero becomes a night sky (stars, aurora, ridge) with Continue Listening + quote | ✅ |
+| "PLAYING FROM" header | Player header shows source (queue / station / catalogue) | ✅ |
+| Labeled secondary actions (Lyrics/Download/Audio/More) | LYRICS · DOWNLOAD · AUDIO · QUEUE labeled row with active states | ✅ |
+| UP NEXT card | Compact up-next preview above the controls, tap → queue tab | ✅ |
+| Glowing progress thumb + premium play ring | 66px gradient play button with double ring; white glowing seek thumb | ✅ |
+| Ambient artwork glow | Radial green/cyan (violet in theme) bloom behind the vinyl | ✅ |
+| Lyrics over blurred artwork | Lyrics tab renders a 46px-blur artwork layer behind the words | ✅ |
+| Library shortcuts (Liked/Downloads cards) | Three gradient shortcut cards with live counts | ✅ |
+| Browse All visual grid | 12 hue-shifted cinematic tiles, one-tap queues | ✅ |
+| Mood chips on Home | Functional mood starters (Party/Chill/Workout/Romantic/Focus/Sleep) | ✅ |
+| Electric violet accent | Full "Electric Violet" theme in Settings (green/cyan stays default) | ✅ |
+| Fake lossless/Hi-Res quality picker | **Intentionally not built** — the app only ever offers what the stream really is | ⛔ honesty |
+| Premium subscription tab | **Intentionally not built** — every feature is free; the spec's "Premium" is SurBox's default state | ⛔ honesty |
+
 ## 1. UI System (v2) — ✅ SHIPPED
 
 Same DNA (true black AMOLED, neon `#00FF9C` / `#00E5FF`, DM Sans + Bangers,

@@ -330,7 +330,7 @@ export function FullPlayer() {
     <div className="full">
       <div className="full-top">
         <button className="iconbtn" onClick={() => p.setFull(false)} title="Minimize to bar">⌄</button>
-        <div className="full-ttl"><b>Now playing</b><span>{t.src || 'SurBox'}</span></div>
+        <div className="full-ttl"><b>Playing from</b><span>{t.src || (p.queue.length > 1 ? 'Your queue' : 'SurBox')}</span></div>
         <button className="iconbtn" aria-label="Minimize to hidden" title="Hide player (keep playing)"
           onClick={() => { p.setFull(false); p.setMiniHidden(true); }}>
           <Icon n="down" size={16} /></button>
@@ -426,6 +426,12 @@ export function FullPlayer() {
         </>)}
 
         {tab === 'lyrics' && (
+          <div style={{ position: 'relative' }}>
+            {/* the artwork, melted into the background — the words float over
+                the mood of the record instead of a flat panel */}
+            <div className="lyrics-blur" aria-hidden="true">
+              {t.art ? <img src={t.art} alt="" /> : <div className="ph" />}
+            </div>
           <div className="lyrics" ref={lyrRef}>
             {!p.lyrics && <div className="state"><span>No lyrics found for this track</span></div>}
             {p.lyrics && (
@@ -439,6 +445,7 @@ export function FullPlayer() {
                 onClick={() => p.seek(l.t)}>{l.line}</p>))}
             {p.lyrics && !p.lyrics.synced && (
               <pre className="lyr-plain">{p.lyrics.plain}</pre>)}
+          </div>
           </div>)}
 
         {tab === 'eq' && (
@@ -594,6 +601,33 @@ export function FullPlayer() {
             }} />
           <span className="volpct mono">{Math.round(vol * 100)}</span>
         </div>
+        {/* Labeled secondary actions — the four things people actually reach
+            for, named instead of guessed from icons. */}
+        <div className="lacts">
+          <button className={tab === 'lyrics' ? 'on' : ''} onClick={() => setTab('lyrics')}>
+            <span className="wic"><Icon n="type" size={17} /></span>Lyrics</button>
+          {t.id && (
+            <button className={isDownloaded(t.id) ? 'on' : ''} disabled={isDownloading(t.id)}
+              onClick={() => dl(t)}>
+              <span className="wic">{isDownloading(t.id) ? <span className="spin-sm" /> : <Icon n="download" size={17} />}</span>
+              {isDownloaded(t.id) ? 'Saved' : 'Download'}</button>)}
+          <button className={tab === 'eq' ? 'on' : ''} onClick={() => setTab('eq')}>
+            <span className="wic"><Icon n="wave" size={17} /></span>Audio</button>
+          <button className={tab === 'queue' ? 'on' : ''} onClick={() => setTab('queue')}>
+            <span className="wic"><Icon n="queue" size={17} /></span>Queue</button>
+        </div>
+
+        {/* UP NEXT — one look ahead, without opening the queue. */}
+        {p.queue.length > 1 && p.queue[p.idx + 1] && (() => {
+          const n = p.queue[p.idx + 1];
+          return (
+            <div className="upnext" onClick={() => setTab('queue')}>
+              {n.art ? <img src={n.art} alt="" /> : <span className="ph"><Icon n="music" size={15} /></span>}
+              <div className="lbl">Up next<b>{n.title || n.name || 'Untitled'}</b><span>{n.artist || ''}</span></div>
+              <Icon n="chevron" size={15} style={{ opacity: .5 }} />
+            </div>);
+        })()}
+
         <div className="btnrow" style={{ justifyContent: 'center' }}>
           <button className="btn ghost sm" onClick={() => p.seek(Math.max(0, p.pos - 10))}>&minus;10s</button>
           <button className="btn ghost sm" onClick={() => p.seek(p.pos + 10)}>+10s</button>
@@ -608,14 +642,6 @@ export function FullPlayer() {
             disabled={radioBusy} onClick={() => songRadio(t)}
             style={{ opacity: radioBusy ? .5 : 1 }}>
             {radioBusy ? <span className="spin-sm" /> : <Icon n="radio" size={15} />}</button>
-          {/* Offline save — the bytes live on the device, so the song plays
-              with no internet at all. Tap again to remove. */}
-          {t.id && (
-            <button className="btn ghost sm" aria-label="Download for offline"
-              title={isDownloaded(t.id) ? 'Saved offline — tap to remove' : 'Save offline'}
-              disabled={isDownloading(t.id)} onClick={() => dl(t)}
-              style={{ color: isDownloaded(t.id) ? 'var(--green)' : '' }}>
-              {isDownloading(t.id) ? <span className="spin-sm" /> : <Icon n="download" size={15} />}</button>)}
         </div>
         {dlErr && <div className="err" style={{ marginTop: 8 }}><p>{dlErr}</p></div>}
         {sleepOpen && (

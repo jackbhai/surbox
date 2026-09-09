@@ -88,61 +88,80 @@ export default function HomeScreen({ go }) {
   const hist = history().slice(0, 10);
   const top = topPlayed(10);
   const stats = listenStats();
-  const artistOrbs = [
-    ...stats.topArtists.map((a) => ({ name: a.name, sub: 'most heard' })),
-    ...(prefs.artists || []).slice(0, 8).map((a) => ({ name: a, sub: 'your pick' })),
-  ].filter((v, i, arr) => arr.findIndex((x) => x.name === v.name) === i).slice(0, 10);
+  const night = (() => { const h = new Date().getHours(); return h >= 21 || h < 5; })();
+  const featured = recs?.[0];
+  const heroTitle = night ? 'GOOD NIGHT' : 'SOUNDS BEYOND LIMITS';
+  const heroSub = night
+    ? 'Let the music take you somewhere better tonight.'
+    : 'Your mix, rebuilt from what you actually play. Ad-free, endless.';
+  const heroPlay = () => {
+    if (night && freshSession && !player.track) { player.resumeSession(); return; }
+    buildMix();
+  };
 
-  const playOrb = async (name) => {
+  const MOODS = [
+    ['Party', 'bolt'], ['Chill', 'moon'], ['Workout', 'bolt'], ['Romantic', 'heart'],
+    ['Focus', 'sparkle'], ['Sleep', 'moon'],
+  ];
+  const [moodBusy, setMoodBusy] = useState(null);
+  const startMood = async (m) => {
+    if (moodBusy) return;
+    setMoodBusy(m);
     try {
-      const r = await searchMusic(name, { deep: false });
+      const r = await searchMusic(`${m} songs`, { deep: false });
       if (r?.tracks?.length) { player.setRadio(true); playList(player, r.tracks, 0); }
-    } catch {}
+    } finally { setMoodBusy(null); }
   };
 
   return (
     <div className="pageanim">
-      {/* greeting */}
-      <h1 className="sb-h1" style={{ margin: '10px 0 2px' }}>{greeting()}</h1>
-      <p className="sb-sub">No ads. No login. Just your sound.</p>
-
-      {/* continue listening */}
-      {!player.track && freshSession && (
-        <div className="glass hoverable" style={{ marginTop: 16, display: 'flex', gap: 13, alignItems: 'center' }}
-          onClick={() => player.resumeSession()}>
-          {session.track.art
-            ? <img src={session.track.art} alt="" style={{ width: 52, height: 52, borderRadius: 13, objectFit: 'cover', flex: '0 0 auto' }} />
-            : <div style={{ width: 52, height: 52, borderRadius: 13, background: 'var(--s3)', display: 'grid', placeItems: 'center', flex: '0 0 auto', color: 'var(--green)' }}>
-                <Icon n="music" size={20} /></div>}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="dim sm" style={{ marginBottom: 2, color: 'var(--cyan)' }}>CONTINUE LISTENING</div>
-            <b style={{ fontSize: 13.5, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {session.track.title || 'Untitled'}</b>
-            <span className="dim sm" style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {session.track.artist || ''}</span>
-          </div>
-          <span className="hero-mix go" style={{ boxShadow: 'none' }}><Icon n="play" size={17} /></span>
-        </div>)}
-
-      {/* daily mix hero */}
-      <div className="hero-mix" style={{ marginTop: 14 }} onClick={buildMix}>
-        <div className="ic">{mixBusy ? <span className="spin-sm" /> : <Icon n="bolt" size={24} />}</div>
-        <div className="tx">
-          <b>Your Daily Mix</b>
-          <span>Built from what you actually play — new every tap</span>
+      {/* greeting + avatar */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, margin: '10px 0 2px' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h1 className="sb-h1" style={{ margin: 0 }}>{greeting()}</h1>
+          <p className="sb-sub">Music feels better with you. No ads, no login — just your sound.</p>
         </div>
-        <button className="go" aria-label="Play daily mix" onClick={(e) => { e.stopPropagation(); buildMix(); }}>
-          <Icon n="play" size={18} /></button>
+        <button className="avbtn" aria-label="Edit your taste" title="Edit your taste"
+          onClick={() => go('taste')}>
+          <Icon n="smile" size={19} /></button>
       </div>
 
-      {/* quick vibes */}
-      {prefs.moods.length > 0 && (<>
-        <SectionHead icon="heart" title="Quick vibes" />
-        <div className="cats">
-          {prefs.moods.slice(0, 6).map((m) => (
-            <button key={m} className="cat" onClick={() => go('genres', m)}>{m}</button>))}
+      {/* cinematic hero — night gets its own sky */}
+      {night ? (
+        <div className="night-hero" onClick={heroPlay}>
+          <span className="sky" /><span className="stars" /><span className="ridge" />
+          <div className="inner">
+            <div className="kick">Sleep mode</div>
+            <h3>Good Night</h3>
+            <p>{freshSession ? 'Pick up exactly where you left off.' : 'Soft songs for the hours nobody sees.'}</p>
+            <button className="cta" onClick={(e) => { e.stopPropagation(); heroPlay(); }}>
+              <Icon n="play" size={14} /> {freshSession ? 'Continue Listening' : 'Play Night Mix'}</button>
+            <p className="quote">&ldquo;Music gives a soul to the universe, wings to the mind, flight to the imagination.&rdquo;</p>
+          </div>
         </div>
-      </>)}
+      ) : (
+        <div className="sb-hero" onClick={heroPlay}>
+          {featured?.art
+            ? <img className="bgimg" src={featured.art} alt="" loading="lazy" />
+            : <div className="bgimg" style={{ background: 'linear-gradient(140deg, var(--s3), var(--s2) 60%, #000)' }} />}
+          <span className="shade" />
+          <div className="inner">
+            <div className="kick">Your Daily Mix</div>
+            <h3>{heroTitle}</h3>
+            <p>{heroSub}</p>
+            <button className="cta" onClick={(e) => { e.stopPropagation(); heroPlay(); }}>
+              {mixBusy ? <span className="spin-sm" /> : <Icon n="play" size={14} />} Play Now</button>
+          </div>
+        </div>)}
+
+      {/* mood starters */}
+      <div className="cats" style={{ marginTop: 14 }}>
+        <button className="cat on" onClick={() => go('genres')}>All</button>
+        {MOODS.map(([m, ic]) => (
+          <button key={m} className="cat" disabled={moodBusy === m} onClick={() => startMood(m)}>
+            {moodBusy === m ? <span className="spin-sm" /> : <Icon n={ic} size={12} />} {m}
+          </button>))}
+      </div>
 
       {/* jump back in */}
       {hist.length > 0 && (<>
