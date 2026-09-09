@@ -4,6 +4,7 @@ import { isFav, toggleFav } from '../core/library';
 import { downloadTrack, removeDownload, isDownloaded, isDownloading, onDownloads } from '../core/downloads';
 import { resolveAudio } from '../core/audio-resolve';
 import { radioQueue } from '../core/music';
+import { useArtTheme, artStyle } from '../core/art-theme';
 import { Icon } from './icons';
 
 const mmss = (s) => (!s || !isFinite(s)) ? '0:00'
@@ -325,9 +326,18 @@ export function FullPlayer() {
 
   if (!p?.full || !p.track) return null;
   const t = p.track;
+  /* The player dresses in the artwork: palette accents re-skin every child
+     through the two theme variables, and the art itself becomes a static,
+     heavily blurred, low-opacity wash behind the whole screen. */
+  const pal = useArtTheme(t?.art);
 
   return (
-    <div className="full">
+    <div className="full art" style={artStyle(pal)}>
+      <div className="full-bg" aria-hidden="true">
+        {t?.art
+          ? <img src={t.art} alt="" draggable={false} />
+          : <div className="nul" />}
+      </div>
       <div className="full-top">
         <button className="iconbtn" onClick={() => p.setFull(false)} title="Minimize to bar">⌄</button>
         <div className="full-ttl"><b>Playing from</b><span>{t.src || (p.queue.length > 1 ? 'Your queue' : 'SurBox')}</span></div>

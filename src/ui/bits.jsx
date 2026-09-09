@@ -3,7 +3,7 @@
  * from. Same theme DNA (neon green/cyan on true black), glass surfaces,
  * editorial section headers in the brand display face.
  */
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { Icon } from './icons';
 
 export const mmss = (s) => (!s || !isFinite(s)) ? '0:00'
@@ -131,3 +131,88 @@ export const CoverGrad = ({ seed = '', icon = 'music', size = 26 }) => {
       <Icon n={icon} size={size} />
     </div>);
 };
+
+/* ---------------------------------------------------------- collapsible */
+/**
+ * A section that folds away. The header stays; the body collapses with a
+ * soft height+fade so a busy home can be emptied in two taps. Open/closed
+ * is remembered per section, per device.
+ */
+export function Collapse({ icon, title, onMore, k, children }) {
+  const [open, setOpen] = useState(() => {
+    if (!k) return true;
+    try { return localStorage.getItem('omni:col:' + k) !== '0'; } catch { return true; }
+  });
+  const toggle = () => setOpen((o) => {
+    const n = !o;
+    if (k) { try { localStorage.setItem('omni:col:' + k, n ? '1' : '0'); } catch {} }
+    return n;
+  });
+  return (
+    <div style={{ margin: '26px 0 0' }}>
+      <div className="sb-sec" style={{ margin: 0 }}>
+        {icon && <Icon n={icon} size={15} style={{ color: 'var(--green)' }} />}
+        <h2 onClick={toggle} style={{ cursor: 'pointer' }}>{title}</h2>
+        <span className="ln" />
+        {onMore && <button className="more" onClick={onMore}>See all <Icon n="chevron" size={12} /></button>}
+        <button className="colbtn" onClick={toggle} aria-label={open ? `Collapse ${title}` : `Expand ${title}`}
+          aria-expanded={open}>
+          <Icon n="chevron" size={14} style={{
+            transform: open ? 'rotate(180deg)' : 'none',
+            transition: 'transform .28s cubic-bezier(.2,.9,.3,1.2)',
+          }} />
+        </button>
+      </div>
+      <div className={`coll ${open ? 'open' : ''}`} aria-hidden={!open}>
+        <div className="coll-in" style={{ paddingTop: 13 }}>{children}</div>
+      </div>
+    </div>);
+}
+
+/* --------------------------------------------------------- view toggle */
+/** Row ⇄ Grid switch for any song list. Preference is remembered globally. */
+export function ViewToggle({ view, onChange }) {
+  const set = (v) => { try { localStorage.setItem('omni:listview', v); } catch {} onChange(v); };
+  return (
+    <div className="vtoggle" role="group" aria-label="View">
+      <button className={view === 'row' ? 'on' : ''} onClick={() => set('row')}
+        aria-label="List view" title="List view"><Icon n="list" size={15} /></button>
+      <button className={view === 'grid' ? 'on' : ''} onClick={() => set('grid')}
+        aria-label="Grid view" title="Grid view"><Icon n="grid" size={15} /></button>
+    </div>);
+}
+
+/** Default list view from storage ('row' unless the user chose grid). */
+export const readListView = () => {
+  try { return localStorage.getItem('omni:listview') === 'grid' ? 'grid' : 'row'; } catch { return 'row'; }
+};
+
+/* ------------------------------------------------------------ grid list */
+/**
+ * Songs as a card grid — the alternate view for search results and library
+ * lists. Big art, title, artist, a play badge that appears on hover/press,
+ * and a subtle accent ring on the card that is actually playing.
+ */
+export function TrackGrid({ tracks, player, onPlay }) {
+  return (
+    <div className="tgrid">
+      {tracks.map((t, i) => {
+        const active = player?.track && (player.track.id ?? player.track.url) === (t.id ?? t.url);
+        return (
+          <div key={(t.id || t.url || t.title) + i} className={`tcard ${active ? 'act' : ''}`}
+            onClick={() => onPlay(t, i)} role="button" tabIndex={0}
+            onKeyDown={(e) => { if (e.key === 'Enter') onPlay(t, i); }}
+            style={{ animationDelay: `${Math.min(i, 12) * 30}ms` }}>
+            <div className="cv">
+              {t.art
+                ? <img src={t.art} alt="" loading="lazy" onError={(e) => { e.target.style.display = 'none'; }} />
+                : <div className="ph"><Icon n="music" size={26} /></div>}
+              {active && player.playing && <span className="eqs"><i /><i /><i /></span>}
+              <span className="badge" aria-hidden="true"><Icon n="play" size={13} /></span>
+            </div>
+            <b>{(t.title || 'Untitled').slice(0, 60)}</b>
+            <small>{t.artist || '—'}</small>
+          </div>);
+      })}
+    </div>);
+}

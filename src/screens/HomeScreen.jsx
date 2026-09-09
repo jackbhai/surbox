@@ -12,7 +12,7 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { Icon } from '../ui/icons';
-import { SectionHead, Shelf, ShelfCard, ShelfSkeleton, playList, greeting, CoverGrad } from '../ui/bits';
+import { Collapse, Shelf, ShelfCard, ShelfSkeleton, playList, greeting, CoverGrad } from '../ui/bits';
 import { usePlayer, lastSession } from '../core/player';
 import { searchMusic } from '../core/music';
 import { prefetchAudio, rememberTrack } from '../core/audio-resolve';
@@ -178,31 +178,32 @@ export default function HomeScreen({ go }) {
       </div>
 
       {/* jump back in */}
-      {hist.length > 0 && (<>
-        <SectionHead icon="timer" title="Jump back in" />
+      {hist.length > 0 && (
+        <Collapse icon="timer" title="Jump back in" k="jump">
         <Shelf>
           {hist.map((t, i) => (
             <ShelfCard key={t.id || i} art={t.art} title={t.title} sub={t.artist}
               delay={i} onPlay={() => playList(player, hist, i)} onClick={() => playList(player, hist, i)} />))}
         </Shelf>
-      </>)}
+      </Collapse>)}
 
       {/* made for you */}
-      <SectionHead icon="sparkle" title="Made for you" />
-      {recs === null
-        ? <Shelf><ShelfSkeleton n={3} /></Shelf>
-        : recs.length === 0
-          ? <EmptyHint text="Nothing yet — pick a few artists in Search and this fills itself." />
-          : <Shelf>
-              {recs.map((t, i) => (
-                <ShelfCard key={t.id || i} art={t.art} title={t.title}
-                  sub={t.artist || '—'} delay={i}
-                  onPlay={() => playList(player, recs, i)} onClick={() => playList(player, recs, i)} />))}
-            </Shelf>}
+      <Collapse icon="sparkle" title="Made for you" k="foryou">
+        {recs === null
+          ? <Shelf><ShelfSkeleton n={3} /></Shelf>
+          : recs.length === 0
+            ? <EmptyHint text="Nothing yet — pick a few artists in Search and this fills itself." />
+            : <Shelf>
+                {recs.map((t, i) => (
+                  <ShelfCard key={t.id || i} art={t.art} title={t.title}
+                    sub={t.artist || '—'} delay={i}
+                    onPlay={() => playList(player, recs, i)} onClick={() => playList(player, recs, i)} />))}
+              </Shelf>}
+      </Collapse>
 
       {/* artist orbit */}
-      {artistOrbs.length > 0 && (<>
-        <SectionHead icon="smile" title="Your orbit" more={null} />
+      {artistOrbs.length > 0 && (
+        <Collapse icon="smile" title="Your orbit" k="orbit">
         <Shelf>
           {artistOrbs.map((a, i) => {
             const initials = a.name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
@@ -214,21 +215,21 @@ export default function HomeScreen({ go }) {
               </button>);
           })}
         </Shelf>
-      </>)}
+      </Collapse>)}
 
       {/* most played */}
-      {top.length > 0 && (<>
-        <SectionHead icon="chart" title="On repeat" onMore={() => go('library', 'songs')} />
+      {top.length > 0 && (
+        <Collapse icon="chart" title="On repeat" k="repeat" onMore={() => go('library', 'songs')}>
         <Shelf>
           {top.map((t, i) => (
             <ShelfCard key={t.id || i} art={t.art} title={t.title}
               sub={`${t.plays} plays`} delay={i}
               onPlay={() => playList(player, top, i)} onClick={() => playList(player, top, i)} />))}
         </Shelf>
-      </>)}
+      </Collapse>)}
 
       {/* browse */}
-      <SectionHead icon="grid" title="Browse" />
+      <Collapse icon="grid" title="Browse" k="browse">
       <div className="qgrid" style={{ marginBottom: 6 }}>
         {[
           ['charts', 'chart', 'Charts', 'What India is playing'],
@@ -255,6 +256,7 @@ export default function HomeScreen({ go }) {
           </span>
         </button>
       </div>
+      </Collapse>
     </div>);
 }
 

@@ -11,7 +11,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { Icon } from '../ui/icons';
-import { SectionHead, playList, CoverGrad, hueOf } from '../ui/bits';
+import { SectionHead, playList, CoverGrad, hueOf, ViewToggle, TrackGrid, readListView } from '../ui/bits';
 import { usePlayer } from '../core/player';
 import {
   favourites, history, topPlayed, playlists, createPlaylist, deletePlaylist, removeFromPlaylist,
@@ -29,6 +29,7 @@ export default function LibraryScreen({ initial = 'songs' }) {
   const player = usePlayer();
   const [seg, setSeg] = useState(SEGS.some(([id]) => id === initial) ? initial : 'songs');
   const [songView, setSongView] = useState('fav');
+  const [view, setView] = useState(readListView);
   const [, bump] = useState(0);
   useEffect(() => onLibrary(() => bump((n) => n + 1)), []);
 
@@ -91,9 +92,12 @@ export default function LibraryScreen({ initial = 'songs' }) {
                 <button className="btn ghost sm" aria-label="Clear history"
                   onClick={() => { if (confirm('Clear play history?')) clearHistory(); }}>
                   <Icon n="x" size={14} /></button>)}
+              <ViewToggle view={view} onChange={setView} />
             </div>
-            <TrackList tracks={rows} player={player}
-              onPlay={(t, i) => playList(player, rows, i)} />
+            {view === 'grid'
+              ? <TrackGrid tracks={rows} player={player} onPlay={(t, i) => playList(player, rows, i)} />
+              : <TrackList tracks={rows} player={player}
+                  onPlay={(t, i) => playList(player, rows, i)} />}
           </>)}
       </>)}
 
@@ -122,6 +126,7 @@ function Playlists({ player }) {
   const [, bump] = useState(0);
   const [openId, setOpenId] = useState(null);
   const [newName, setNewName] = useState('');
+  const [view, setView] = useState(readListView);
   useEffect(() => onLibrary(() => bump((n) => n + 1)), []);
   const pls = playlists();
 
@@ -147,9 +152,13 @@ function Playlists({ player }) {
           </div>
         </div>
       </div>
-      <TrackList tracks={pl.tracks} player={player}
-        onPlay={(t, i) => playList(player, pl.tracks, i)}
-        onRemove={(t) => removeFromPlaylist(pl.id, t.id)} />
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+        <ViewToggle view={view} onChange={setView} /></div>
+      {view === 'grid'
+        ? <TrackGrid tracks={pl.tracks} player={player} onPlay={(t, i) => playList(player, pl.tracks, i)} />
+        : <TrackList tracks={pl.tracks} player={player}
+            onPlay={(t, i) => playList(player, pl.tracks, i)}
+            onRemove={(t) => removeFromPlaylist(pl.id, t.id)} />}
       <button className="ghostcta" style={{ marginTop: 16 }}
         onClick={() => { if (confirm(`Delete "${pl.name}"?`)) { deletePlaylist(pl.id); setOpenId(null); } }}>
         <Icon n="trash" size={14} /> Delete this playlist</button>

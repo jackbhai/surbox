@@ -8,7 +8,7 @@
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Icon } from '../ui/icons';
-import { SectionHead } from '../ui/bits';
+import { SectionHead, ViewToggle, TrackGrid, readListView } from '../ui/bits';
 import { usePlayer } from '../core/player';
 import { searchMusic, suggest } from '../core/music';
 import { catalogueReady, searchCatalogue, toPlayableList } from '../core/catalogue';
@@ -42,6 +42,7 @@ export default function SearchScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [recent, setRecent] = useState(readSearches);
   const [listening, setListening] = useState(false);
+  const [view, setView] = useState(readListView);
   const nextRef = useRef(null);
   const seq = useRef(0);
   const abortRef = useRef(null);
@@ -225,11 +226,14 @@ export default function SearchScreen() {
           <button className="btn ghost sm" onClick={() => {
             const sh = [...tracks].sort(() => Math.random() - 0.5);
             player.setShuffle(true); player.play(sh[0], sh);
-          }}><Icon n="shuffle" size={14} /> Shuffle all</button>
+          }}><Icon n="shuffle" size={14} /> Shuffle</button>
+          <ViewToggle view={view} onChange={setView} />
         </div>
-        <TrackList tracks={tracks} player={player} loading={loadingMore} more={more}
-          onMore={loadMore}
-          onPlay={(t, i) => player.play(t, tracks)} />
+        {view === 'grid'
+          ? <TrackGrid tracks={tracks} player={player} onPlay={(t, i) => player.play(t, tracks)} />
+          : <TrackList tracks={tracks} player={player} loading={loadingMore} more={more}
+              onMore={loadMore}
+              onPlay={(t, i) => player.play(t, tracks)} />}
       </>)}
     </div>);
 }
