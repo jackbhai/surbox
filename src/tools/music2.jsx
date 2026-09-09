@@ -92,7 +92,7 @@ export function Music() {
 }
 
 /* ------------------------------------------------------------- track list */
-function TrackList({ tracks, player, onPlay, loading, more, onMore, onRemove }) {
+export function TrackList({ tracks, player, onPlay, loading, more, onMore, onRemove }) {
   const sentinel = useRef(null);
   const [addFor, setAddFor] = useState(null);   // track awaiting a playlist pick
   const [, bump] = useState(0);
@@ -455,7 +455,7 @@ function SearchTab({ player }) {
 }
 
 /* ------------------------------------------------------------ charts tab */
-function ChartsTab({ player }) {
+export function ChartsTab({ player }) {
   const [country, setCountry] = useState('in');
   const [rows, setRows] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -524,7 +524,7 @@ function ChartsTab({ player }) {
 }
 
 /* ------------------------------------------------------------ genres tab */
-function GenresTab({ player }) {
+export function GenresTab({ player }) {
   const [open, setOpen] = useState(null);
   const [tracks, setTracks] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -585,7 +585,7 @@ function GenresTab({ player }) {
 }
 
 /* ---------------------------------------------------------- playlist tab */
-function PlaylistTab({ player }) {
+export function PlaylistTab({ player }) {
   const [q, setQ] = useState('punjabi hits');
   const [lists, setLists] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -680,7 +680,7 @@ function PlaylistTab({ player }) {
 }
 
 /* -------------------------------------------------------------- radio tab */
-function RadioTab({ player }) {
+export function RadioTab({ player }) {
   const [mode, setMode] = useState('desi');       // desi = endless mix · live = stations
   const [busy, setBusy] = useState(false);
   const [stations, setStations] = useState(null);
@@ -961,7 +961,7 @@ function LibraryTab({ player }) {
  * Songs saved on this device. They play with no internet and start in ~0 ms;
  * the player checks this store before it ever asks the network.
  */
-function DownloadsView({ player }) {
+export function DownloadsView({ player }) {
   const [, bump] = useState(0);
   useEffect(() => onDownloads(() => bump((n) => n + 1)), []);
   const rows = downloads();
@@ -1014,7 +1014,7 @@ function DownloadsView({ player }) {
  * Listening time, not just play counts — the player measures wall-clock
  * seconds while a track is actually audible.
  */
-function StatsView({ player }) {
+export function StatsView({ player }) {
   const s = listenStats();
   const max = s.topArtists[0]?.s || 1;
   return (<>
@@ -1058,7 +1058,7 @@ function StatsView({ player }) {
  * playlists, preferences, searches, listening time). Restore merges rather
  * than replaces, so a restore on a used device never loses anything.
  */
-function AppBits() {
+export function AppBits() {
   const [canInstall, setCanInstall] = useState(false);
   const [msg, setMsg] = useState('');
   useEffect(() => onInstallPrompt(() => setCanInstall(true)), []);
@@ -1147,7 +1147,7 @@ function AppBits() {
  * catalogue (artists, albums, regional search) is available at all. One ships
  * with the app, so this screen is mostly reassurance plus an escape hatch.
  */
-function SpeedSetup() {
+export function SpeedSetup() {
   const [url, setUrl] = useState(getSettings().proxyUrl || '');
   const [state, setState] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -1223,7 +1223,7 @@ function SpeedSetup() {
  * Punjabi titles matched in testing. Deezer's own 30-second preview is only
  * used if nothing full-length can be found, and is labelled when it happens.
  */
-function ArtistsTab({ player }) {
+export function ArtistsTab({ player }) {
   const [q, setQ] = useState('');
   const [list, setList] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -1422,7 +1422,7 @@ function EntryList({ entries, onPlay }) {
 }
 
 /** Shown when a catalogue feature needs the relay and none is configured. */
-function NeedsRelay({ what }) {
+export function NeedsRelay({ what }) {
   return (
     <Card>
       <div className="chead"><Icon n="info" size={16} /> {what} needs a relay</div>
