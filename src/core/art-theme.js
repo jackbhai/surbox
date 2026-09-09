@@ -76,13 +76,17 @@ export function extractPalette(url) {
   return p;
 }
 
-/** React hook: the accent pair for the current artwork, or null. */
+/** React hook: the accent pair for the current artwork, or null.
+ *
+ *  The previous palette is deliberately KEPT while the next artwork is being
+ *  read: nulling it first made every track change flash the accents back to
+ *  the default green for a few frames before snapping to the new colours —
+ *  a flicker you could not unsee once you had seen it. */
 export function useArtTheme(art) {
   const [pal, setPal] = useState(null);
   useEffect(() => {
     let live = true;
-    setPal(null);
-    if (!art) return undefined;
+    if (!art) { setPal(null); return undefined; }
     extractPalette(art).then((v) => { if (live) setPal(v); });
     return () => { live = false; };
   }, [art]);

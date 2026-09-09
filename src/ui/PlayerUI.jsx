@@ -339,7 +339,7 @@ export function FullPlayer() {
     <div className="full art" style={artStyle(pal)}>
       <div className="full-bg" aria-hidden="true">
         {t?.art
-          ? <img src={t.art} alt="" draggable={false} />
+          ? <img key={t.art} src={t.art} alt="" draggable={false} />
           : <div className="nul" />}
       </div>
       <div className="full-top">

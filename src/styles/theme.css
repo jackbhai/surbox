@@ -1520,10 +1520,14 @@ input[type="color"] {
 .tcard .cv .eqs i:nth-child(3){animation-delay:.44s}
 
 /* ---------- full player: artwork wash + palette ---------- */
-.full{background:#000}
+/* overflow:hidden is not cosmetic: the wash extends inset:-10% beyond the
+   player's box, and without clipping it PAINTS OUTSIDE the player — coloured
+   smears above/below and beside it on wide screens. */
+.full{background:#000;overflow:hidden;transform:translateZ(0)}
 .full .full-bg{position:absolute;inset:-10%;z-index:0;pointer-events:none;overflow:hidden}
-.full .full-bg img{width:100%;height:100%;object-fit:cover;transform:scale(1.28);
-  filter:blur(64px) saturate(1.55) brightness(.42);opacity:.5}
+.full .full-bg img{width:100%;height:100%;object-fit:cover;transform:scale(1.28) translateZ(0);
+  will-change:filter, transform;
+  filter:blur(64px) saturate(1.55) brightness(.42);opacity:.5;animation:sb-fade .5s ease both}
 .full .full-bg .nul{width:100%;height:100%;
   background:radial-gradient(70% 55% at 50% 0%, rgba(0,255,156,.07), transparent 70%)}
 .full .full-bg::after{content:'';position:absolute;inset:0;
@@ -1539,3 +1543,9 @@ input[type="color"] {
   backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
 .full .full-tabs .cat{background:rgba(0,0,0,.32);border:1px solid rgba(255,255,255,.09);
   backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+
+/* lyrics ambience must never create horizontal overflow inside the
+   scrollable body (overflow-y:auto forces overflow-x:auto per spec — a
+   negative horizontal inset showed up as a scrollbar) */
+.full .full-body{overflow-x:hidden}
+.full .lyrics-blur{inset:-24px 0}
