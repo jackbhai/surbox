@@ -201,6 +201,14 @@ export function FullPlayer() {
    * not, this draws nothing and the UI says why instead of faking motion.
    */
   const [vizMode, setVizMode] = useState(() => localStorage.getItem('omni:viz') || 'bars');
+  /* Bottom deck: clean by default. The essentials — timeline, transport —
+     stay; everything else folds into one toggle, remembered per device. */
+  const [ctlOpen, setCtlOpen] = useState(() => localStorage.getItem('omni:ctl') === '1');
+  const toggleCtl = () => setCtlOpen((v) => {
+    const n = !v;
+    try { localStorage.setItem('omni:ctl', n ? '1' : '0'); } catch {}
+    return n;
+  });
   const [vizOn, setVizOn] = useState(false);
   useEffect(() => { localStorage.setItem('omni:viz', vizMode); }, [vizMode]);
 
@@ -538,6 +546,33 @@ export function FullPlayer() {
           </div>)}
       </div>
 
+        {/* Labeled secondary actions — the four things people actually reach
+            for, named instead of guessed from icons. */}
+        <div className="lacts">
+          <button className={tab === 'lyrics' ? 'on' : ''} onClick={() => setTab('lyrics')}>
+            <span className="wic"><Icon n="type" size={17} /></span>Lyrics</button>
+          {t.id && (
+            <button className={isDownloaded(t.id) ? 'on' : ''} disabled={isDownloading(t.id)}
+              onClick={() => dl(t)}>
+              <span className="wic">{isDownloading(t.id) ? <span className="spin-sm" /> : <Icon n="download" size={17} />}</span>
+              {isDownloaded(t.id) ? 'Saved' : 'Download'}</button>)}
+          <button className={tab === 'eq' ? 'on' : ''} onClick={() => setTab('eq')}>
+            <span className="wic"><Icon n="wave" size={17} /></span>Audio</button>
+          <button className={tab === 'queue' ? 'on' : ''} onClick={() => setTab('queue')}>
+            <span className="wic"><Icon n="queue" size={17} /></span>Queue</button>
+        </div>
+
+        {/* UP NEXT — one look ahead, without opening the queue. */}
+        {p.queue.length > 1 && p.queue[p.idx + 1] && (() => {
+          const n = p.queue[p.idx + 1];
+          return (
+            <div className="upnext" onClick={() => setTab('queue')}>
+              {n.art ? <img src={n.art} alt="" /> : <span className="ph"><Icon n="music" size={15} /></span>}
+              <div className="lbl">Up next<b>{n.title || n.name || 'Untitled'}</b><span>{n.artist || ''}</span></div>
+              <Icon n="chevron" size={15} style={{ opacity: .5 }} />
+            </div>);
+        })()}
+
       <div className="full-ctl">
         {/* The seek bar shows how much is buffered as well as how far in you
             are — a stalled track and a slow track look identical without it. */}
@@ -579,92 +614,86 @@ export function FullPlayer() {
           </>);
         })()}
         <div className="btns">
-          <button className={`cbtn ${p.shuffle ? 'act' : ''}`} aria-label="Shuffle"
-            onClick={() => p.setShuffle(!p.shuffle)}><Icon n="shuffle" size={18} /></button>
           <button className="cbtn" aria-label="Previous" onClick={() => p.step(-1)}>
             <Icon n="prev" size={22} /></button>
           <button className="cbtn big" aria-label={p.playing ? 'Pause' : 'Play'} onClick={p.toggle}>
             {p.loading ? <span className="spin-sm" /> : <Icon n={p.playing ? 'pause' : 'play'} size={22} />}</button>
           <button className="cbtn" aria-label="Next" onClick={() => p.step(1)}>
             <Icon n="next" size={22} /></button>
-          {/* Repeat-all and repeat-one used to share the refresh arrow, so the
-              two states were indistinguishable and the only way to know which
-              you were in was to count your own taps. They have separate glyphs
-              now, and the label says which. */}
-          <button className={`cbtn ${p.repeat !== 'off' ? 'act' : ''}`}
-            aria-label={p.repeat === 'one' ? 'Repeat one' : p.repeat === 'all' ? 'Repeat all' : 'Repeat off'}
-            title={p.repeat === 'one' ? 'Repeat one' : p.repeat === 'all' ? 'Repeat all' : 'Repeat off'}
-            onClick={() => p.setRepeat(p.repeat === 'off' ? 'all' : p.repeat === 'all' ? 'one' : 'off')}>
-            <Icon n={p.repeat === 'one' ? 'repeatone' : 'repeat'} size={19} /></button>
         </div>
 
-        {/* Volume, with a mute toggle that remembers where the slider was. */}
-        <div className="volrow">
-          <button className="volbtn" aria-label={vol === 0 ? 'Unmute' : 'Mute'}
-            onClick={() => {
-              const el = p.audio?.current; if (!el) return;
-              if (vol > 0) { lastVol.current = vol; setVol(0); el.volume = 0; }
-              else { const v = lastVol.current || 0.8; setVol(v); el.volume = v; }
-            }}>
-            <Icon n={vol === 0 ? 'volumeoff' : 'volume'} size={16} /></button>
-          <input type="range" className="vol" min="0" max="1" step="0.01" value={vol}
-            aria-label="Volume"
-            onChange={(e) => {
-              const v = +e.target.value; setVol(v);
-              if (p.audio?.current) p.audio.current.volume = v;
-            }} />
-          <span className="volpct mono">{Math.round(vol * 100)}</span>
-        </div>
-        {/* Labeled secondary actions — the four things people actually reach
-            for, named instead of guessed from icons. */}
-        <div className="lacts">
-          <button className={tab === 'lyrics' ? 'on' : ''} onClick={() => setTab('lyrics')}>
-            <span className="wic"><Icon n="type" size={17} /></span>Lyrics</button>
-          {t.id && (
-            <button className={isDownloaded(t.id) ? 'on' : ''} disabled={isDownloading(t.id)}
-              onClick={() => dl(t)}>
-              <span className="wic">{isDownloading(t.id) ? <span className="spin-sm" /> : <Icon n="download" size={17} />}</span>
-              {isDownloaded(t.id) ? 'Saved' : 'Download'}</button>)}
-          <button className={tab === 'eq' ? 'on' : ''} onClick={() => setTab('eq')}>
-            <span className="wic"><Icon n="wave" size={17} /></span>Audio</button>
-          <button className={tab === 'queue' ? 'on' : ''} onClick={() => setTab('queue')}>
-            <span className="wic"><Icon n="queue" size={17} /></span>Queue</button>
-        </div>
+        {/* ONE button between a clean deck and everything else. The deck
+            keeps only what a thumb needs mid-song: timeline, transport. The
+            rest — modes, volume, extras, sleep — folds into this glass drawer,
+            and the choice is remembered. */}
+        <button className={`ctltoggle ${ctlOpen ? 'on' : ''}`} onClick={toggleCtl}
+          aria-expanded={ctlOpen} aria-label={ctlOpen ? 'Hide extra controls' : 'Show extra controls'}>
+          <Icon n="chevron" size={15} style={{
+            transform: ctlOpen ? 'rotate(180deg)' : 'none',
+            transition: 'transform .28s cubic-bezier(.2,.9,.3,1.2)' }} />
+          <span>{ctlOpen ? 'Less' : 'More'}</span>
+        </button>
 
-        {/* UP NEXT — one look ahead, without opening the queue. */}
-        {p.queue.length > 1 && p.queue[p.idx + 1] && (() => {
-          const n = p.queue[p.idx + 1];
-          return (
-            <div className="upnext" onClick={() => setTab('queue')}>
-              {n.art ? <img src={n.art} alt="" /> : <span className="ph"><Icon n="music" size={15} /></span>}
-              <div className="lbl">Up next<b>{n.title || n.name || 'Untitled'}</b><span>{n.artist || ''}</span></div>
-              <Icon n="chevron" size={15} style={{ opacity: .5 }} />
-            </div>);
-        })()}
+        <div className={`ctl-more ${ctlOpen ? 'open' : ''}`}>
+          <div className="ctl-in">
+            <div className="btns" style={{ marginTop: 2 }}>
+              <button className={`cbtn sm ${p.shuffle ? 'act' : ''}`} aria-label="Shuffle"
+                onClick={() => p.setShuffle(!p.shuffle)}><Icon n="shuffle" size={17} /></button>
+              {/* Repeat-all and repeat-one used to share the refresh arrow, so
+                  the two states were indistinguishable. Separate glyphs now. */}
+              <button className={`cbtn sm ${p.repeat !== 'off' ? 'act' : ''}`}
+                aria-label={p.repeat === 'one' ? 'Repeat one' : p.repeat === 'all' ? 'Repeat all' : 'Repeat off'}
+                title={p.repeat === 'one' ? 'Repeat one' : p.repeat === 'all' ? 'Repeat all' : 'Repeat off'}
+                onClick={() => p.setRepeat(p.repeat === 'off' ? 'all' : p.repeat === 'all' ? 'one' : 'off')}>
+                <Icon n={p.repeat === 'one' ? 'repeatone' : 'repeat'} size={17} /></button>
+              <button className={`cbtn sm ${p.sleep ? 'act' : ''}`} aria-label="Sleep timer"
+                title={p.sleep ? `Sleep in ${p.sleep} min` : 'Sleep timer'}
+                onClick={() => setSleepOpen((v) => !v)}>
+                <Icon n={p.sleep ? 'timer' : 'moon'} size={17} /></button>
+              <button className={`cbtn sm ${fav ? 'act' : ''}`} aria-label="Favourite"
+                onClick={() => { toggleFav(t); setFav((v) => !v); }}>
+                <Icon n={fav ? 'staron' : 'star'} size={17} /></button>
+            </div>
 
-        <div className="btnrow" style={{ justifyContent: 'center' }}>
-          <button className="btn ghost sm" onClick={() => p.seek(Math.max(0, p.pos - 10))}>&minus;10s</button>
-          <button className="btn ghost sm" onClick={() => p.seek(p.pos + 10)}>+10s</button>
-          <button className={`btn ghost sm ${fav ? 'on' : ''}`} aria-label="Favourite"
-            onClick={() => { toggleFav(t); setFav((v) => !v); }}
-            style={{ color: fav ? 'var(--green)' : '' }}>
-            <Icon n={fav ? 'staron' : 'star'} size={15} /></button>
-          <button className="btn ghost sm" aria-label="Share" onClick={share}>
-            <Icon n={shared ? 'check' : 'link'} size={15} /></button>
-          {/* Song radio — more music like the track that is on now. */}
-          <button className="btn ghost sm" aria-label="Song radio" title="Play similar songs"
-            disabled={radioBusy} onClick={() => songRadio(t)}
-            style={{ opacity: radioBusy ? .5 : 1 }}>
-            {radioBusy ? <span className="spin-sm" /> : <Icon n="radio" size={15} />}</button>
+            {/* Volume, with a mute toggle that remembers where the slider was. */}
+            <div className="volrow">
+              <button className="volbtn" aria-label={vol === 0 ? 'Unmute' : 'Mute'}
+                onClick={() => {
+                  const el = p.audio?.current; if (!el) return;
+                  if (vol > 0) { lastVol.current = vol; setVol(0); el.volume = 0; }
+                  else { const v = lastVol.current || 0.8; setVol(v); el.volume = v; }
+                }}>
+                <Icon n={vol === 0 ? 'volumeoff' : 'volume'} size={16} /></button>
+              <input type="range" className="vol" min="0" max="1" step="0.01" value={vol}
+                aria-label="Volume"
+                onChange={(e) => {
+                  const v = +e.target.value; setVol(v);
+                  if (p.audio?.current) p.audio.current.volume = v;
+                }} />
+              <span className="volpct mono">{Math.round(vol * 100)}</span>
+            </div>
+
+            {sleepOpen && (
+              <div className="btnrow" style={{ justifyContent: 'center', marginTop: 8 }}>
+                {[0, 15, 30, 45, 60].map((m) => (
+                  <button key={m} className={`cat ${p.sleep === m ? 'on' : ''}`}
+                    onClick={() => { p.setSleep(m); setSleepOpen(false); }}>
+                    {m === 0 ? 'Off' : `${m}m`}</button>))}
+              </div>)}
+
+            <div className="btnrow" style={{ justifyContent: 'center', marginTop: 8 }}>
+              <button className="btn ghost sm" onClick={() => p.seek(Math.max(0, p.pos - 10))}>&minus;10s</button>
+              <button className="btn ghost sm" onClick={() => p.seek(p.pos + 10)}>+10s</button>
+              <button className="btn ghost sm" aria-label="Share" onClick={share}>
+                <Icon n={shared ? 'check' : 'link'} size={15} /></button>
+              <button className="btn ghost sm" aria-label="Song radio" title="Play similar songs"
+                disabled={radioBusy} onClick={() => songRadio(t)}
+                style={{ opacity: radioBusy ? .5 : 1 }}>
+                {radioBusy ? <span className="spin-sm" /> : <Icon n="radio" size={15} />}</button>
+            </div>
+          </div>
         </div>
         {dlErr && <div className="err" style={{ marginTop: 8 }}><p>{dlErr}</p></div>}
-        {sleepOpen && (
-          <div className="btnrow" style={{ justifyContent: 'center' }}>
-            {[0, 15, 30, 45, 60].map((m) => (
-              <button key={m} className={`cat ${p.sleep === m ? 'on' : ''}`}
-                onClick={() => { p.setSleep(m); setSleepOpen(false); }}>
-                {m === 0 ? 'Off' : `${m}m`}</button>))}
-          </div>)}
       </div>
     </div>);
 }

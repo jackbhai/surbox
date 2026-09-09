@@ -1431,9 +1431,9 @@ input[type="color"] {
 .sb-shell{background:transparent}
 .sb-shell::before{content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;
   background:
-    radial-gradient(640px 380px at 88% -6%, rgba(0,229,255,.06), transparent 62%),
-    radial-gradient(560px 340px at -8% 34%, rgba(0,255,156,.05), transparent 60%),
-    radial-gradient(480px 320px at 70% 108%, rgba(0,255,156,.04), transparent 58%);
+    radial-gradient(640px 380px at 88% -6%, color-mix(in srgb, var(--cyan) 7%, transparent), transparent 62%),
+    radial-gradient(560px 340px at -8% 34%, color-mix(in srgb, var(--green) 6%, transparent), transparent 60%),
+    radial-gradient(480px 320px at 70% 108%, color-mix(in srgb, var(--green) 5%, transparent), transparent 58%);
   animation:sb-aura 26s ease-in-out infinite alternate}
 @keyframes sb-aura{from{transform:translate3d(0,0,0)}to{transform:translate3d(0,-3%,0)}}
 
@@ -1549,3 +1549,79 @@ input[type="color"] {
    negative horizontal inset showed up as a scrollbar) */
 .full .full-body{overflow-x:hidden}
 .full .lyrics-blur{inset:-24px 0}
+
+/* ═══════════════════ v2.3 — ULTRA GLASS + THEMES + COLLAPSIBLE DECK ═══════════════════ */
+
+/* film-grain: a hair of noise kills banding and makes gradients read as
+   material instead of CSS — the difference between "glass" and GLASS */
+.sb-shell::after{content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.05;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.6'/%3E%3C/svg%3E");
+  mix-blend-mode:overlay}
+
+/* ultra glass: double highlight (top light line + inner glow), deeper blur,
+   and a faint moving sheen on the two most-touched surfaces */
+.sb-dock, .sb-now{position:relative}
+.sb-dock::before, .sb-now::before{content:'';position:absolute;inset:0;border-radius:inherit;
+  pointer-events:none;z-index:-1;
+  box-shadow:0 1px 0 rgba(255,255,255,.14) inset, 0 -1px 0 rgba(0,0,0,.34) inset}
+.sb-dock::after{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  background:linear-gradient(105deg, transparent 42%, rgba(255,255,255,.075) 50%, transparent 58%);
+  background-size:260% 100%;background-position:70% 0;opacity:.7;
+  animation:sb-sheen 9s ease-in-out infinite}
+@keyframes sb-sheen{0%,55%{background-position:130% 0}100%{background-position:-60% 0}}
+
+.glass{box-shadow:0 24px 64px rgba(0,0,0,.55), 0 0 0 .5px rgba(255,255,255,.05),
+  inset 0 1px 0 rgba(255,255,255,.11), inset 0 -1px 0 rgba(0,0,0,.3), inset 0 18px 34px -22px rgba(255,255,255,.07)}
+.libcard .cv, .upnext, .btile{backdrop-filter:blur(8px) saturate(1.4);-webkit-backdrop-filter:blur(8px) saturate(1.4)}
+
+/* ---------- collapsible player deck ---------- */
+.ctltoggle{display:inline-flex;align-items:center;gap:5px;margin:8px auto 0;padding:7px 16px;
+  border-radius:999px;border:1px solid var(--line2);cursor:pointer;color:var(--fg3);
+  background:linear-gradient(170deg, rgba(255,255,255,.06), rgba(0,0,0,.22));
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  font:700 10.5px/1 var(--font-body);letter-spacing:1.6px;text-transform:uppercase;
+  transition:color .18s, border-color .18s, background .18s}
+.ctltoggle:hover{color:var(--fg);border-color:var(--fg3)}
+.ctltoggle.on{color:var(--green);border-color:color-mix(in srgb, var(--green) 40%, transparent);
+  background:color-mix(in srgb, var(--green) 9%, transparent)}
+.full-ctl .btns{justify-content:center;display:flex;gap:18px;align-items:center}
+.ctl-more{overflow:hidden;max-height:0;opacity:0;transform:translateY(8px);
+  transition:max-height .45s cubic-bezier(.4,0,.2,1), opacity .3s ease, transform .45s cubic-bezier(.4,0,.2,1)}
+.ctl-more.open{max-height:420px;opacity:1;transform:none}
+.ctl-in{margin-top:12px;padding:12px;border-radius:18px;
+  background:linear-gradient(170deg, rgba(255,255,255,.055), rgba(0,0,0,.2));
+  border:1px solid rgba(255,255,255,.09);
+  backdrop-filter:blur(22px) saturate(1.6);-webkit-backdrop-filter:blur(22px) saturate(1.6)}
+.cbtn.sm{width:44px;height:44px;border-radius:50%;border:1px solid var(--line2);
+  background:rgba(255,255,255,.045);color:var(--fg);display:grid;place-items:center;cursor:pointer;
+  transition:color .15s, border-color .15s, transform .12s}
+.cbtn.sm:active{transform:scale(.9)}
+.cbtn.sm.act{color:var(--green);border-color:color-mix(in srgb, var(--green) 45%, transparent);
+  background:color-mix(in srgb, var(--green) 10%, transparent)}
+
+/* ---------- theme screen ---------- */
+.swatches{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px;margin-bottom:4px}
+.swatch{border:0;background:none;padding:0;cursor:pointer;text-align:center;animation:sb-rise .3s ease both}
+.swatch:active{transform:scale(.94)}
+.swatch .sw{position:relative;display:block;width:100%;aspect-ratio:1;border-radius:16px;overflow:hidden;
+  border:2px solid var(--line);transition:border-color .18s, box-shadow .2s}
+.swatch .sw-bg{position:absolute;inset:0;display:grid;place-items:center;background:var(--s2)}
+.swatch .sw-bg i{width:34%;height:34%;border-radius:50%}
+.swatch .sw-bg i:nth-child(2){margin-left:-30%;margin-top:26%}
+.swatch .sw-bg i:nth-child(3){margin-left:30%;margin-top:26%;opacity:.5}
+.swatch:hover .sw{border-color:var(--line2)}
+.swatch.on .sw{border-color:var(--fg);
+  box-shadow:0 0 0 2px color-mix(in srgb, var(--green) 55%, transparent), 0 8px 22px rgba(0,0,0,.5)}
+.swatch .sw-tick{position:absolute;top:7px;right:7px;width:18px;height:18px;border-radius:50%;
+  display:grid;place-items:center;background:var(--green);color:#000}
+.swatch b{display:block;margin-top:7px;font-size:10.5px;color:var(--fg2);line-height:1.3;
+  display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+.swatch.on b{color:var(--fg)}
+
+/* custom maker rows */
+.mkrow{display:flex;align-items:center;gap:10px;margin-top:14px}
+.mkrow label{flex:0 0 104px;font-size:11.5px;font-weight:600;color:var(--fg2);
+  display:flex;align-items:center;gap:6px}
+.mkdot{width:13px;height:13px;border-radius:50%;flex:0 0 auto;box-shadow:0 0 8px currentColor}
+.mkv{flex:0 0 34px;text-align:right;font-size:11px;color:var(--fg3)}
+.mkrow input[type=range]{flex:1}

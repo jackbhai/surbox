@@ -15,6 +15,7 @@ import { renderToString } from 'react-dom/server';
 import App from '../src/App';
 import SearchScreen from '../src/screens/SearchScreen';
 import LibraryScreen from '../src/screens/LibraryScreen';
+import ThemeScreen from '../src/screens/ThemeScreen';
 import { PlayerProvider } from '../src/core/player';
 
 /* ---- minimal browser mocks ---- */
@@ -83,6 +84,7 @@ run('Search + Library screens', () => {
   }
   check('search', React.createElement(
     PlayerProvider, null, React.createElement(SearchScreen)));
+  check('theme', React.createElement(ThemeScreen, { onBack: () => {} }));
 });
 
 if (failures > 0) { console.error(`\n${failures} FAILURE(S)`); process.exit(1); }

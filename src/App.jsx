@@ -24,6 +24,7 @@ import SearchScreen from './screens/SearchScreen';
 import LibraryScreen from './screens/LibraryScreen';
 import { ChartsTab, GenresTab, PlaylistTab, RadioTab, ArtistsTab } from './tools/music2';
 import { PreferencesEditor } from './tools/music-prefs';
+import ThemeScreen from './screens/ThemeScreen';
 
 /**
  * Keyboard shortcuts — desktop users get real controls.
@@ -142,6 +143,7 @@ function Shell() {
             <PageHead icon="cog" title="YOUR TASTE" sub="Languages, artists, vibes — Home rebuilds instantly" onBack={() => go('home')} />
             <PreferencesEditor onClose={() => go('home')} />
           </div>)}
+        {page === 'theme' && <ThemeScreen onBack={() => go('home')} />}
       </main>
 
       <NowBar />
@@ -178,6 +180,7 @@ function MoreSheet({ go, close }) {
     ['radio', 'radio', 'Radio', 'Non-stop music'],
     ['artists', 'smile', 'Artists', 'The full catalogue'],
     ['taste', 'cog', 'Edit taste', 'Languages, artists, vibes'],
+    ['theme', 'palette', 'Appearance', '35+ themes + your own'],
     ['library', 'bolt', 'Your stats', 'Minutes, artists, trends'],
   ];
   return (

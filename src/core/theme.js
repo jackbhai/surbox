@@ -202,6 +202,121 @@ export const THEMES = {
   },
 };
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   THEME FAMILIES — one hue, its whole wardrobe.
+
+   A "family" theme is generated from a single base hue: every surface, line
+   and text colour carries a whisper of it, and both accents are drawn from
+   neighbouring shades — a Blood Red theme is REDS (surface tint, rose
+   highlights, ember secondary), never one flat red dropped on grey.
+
+   Hand-tuned entries above stay; these are derived. True black background
+   on every dark family — the AMOLED promise is not negotiable.
+   ═══════════════════════════════════════════════════════════════════════════ */
+const hsl = (h, s, l) => `hsl(${((h % 360) + 360) % 360}, ${s}%, ${l}%)`;
+
+function family(id, name, description, h, o = {}) {
+  const SS = o.ss ?? 24;                       // how strongly surfaces carry the hue
+  const AS = o.as ?? 86;                       // accent saturation
+  const AL = o.al ?? 62;                       // accent lightness
+  const H2 = h + (o.shift ?? 42);              // secondary accent hue
+  const AS2 = o.as2 ?? 90;
+  return {
+    id, name, description,
+    colors: {
+      '--bg': '#000000',
+      '--s1': hsl(h, SS, 3.5),
+      '--s2': hsl(h, SS, 6),
+      '--s3': hsl(h, SS + 3, 9),
+      '--line': hsl(h, SS, 10.5),
+      '--line2': hsl(h, SS, 15.5),
+      '--green': hsl(h, AS, AL),
+      '--green-dim': hsl(h, AS, Math.max(28, AL - 17)),
+      '--cyan': hsl(H2, AS2, Math.min(80, AL + 3)),
+      '--cyan-dim': hsl(H2, AS2, Math.max(30, AL - 13)),
+      '--fg': hsl(h, 26, 93),
+      '--fg2': hsl(h, 16, 70),
+      '--fg3': hsl(h, 12, 50),
+      '--warn': '#FFD166',
+      '--bad': '#FF5C7A',
+    },
+    isDark: true,
+  };
+}
+
+const FAMILIES = [
+  // greens / cyans
+  ['mint',      'Neon Mint',        'Mint green family, crisp and cool', 158],
+  ['cyancyber', 'Cyber Cyan',       'Electric cyan family, techy and bright', 188],
+  ['teal',      'Deep Teal',        'Teal family, calm water deep', 172, { al: 58 }],
+  ['arctic',    'Arctic Mint',      'Pale ice mint, soft on the eyes', 166, { ss: 12, al: 70 }],
+  ['emerald',   'Emerald',          'Gemstone greens with gold edge', 152, { shift: 34, al: 58 }],
+  // greens — wild side
+  ['lime',      'Acid Lime',        'Sour lime family, loud and fast', 88],
+  ['toxic',     'Toxic Waste',      'Radioactive green with hazard glow', 96, { shift: -60 }],
+  // violets
+  ['venom',     'Venom Violet',     'Toxic violet with acid-green bite', 283, { shift: -150 }],
+  ['uv',        'Ultraviolet',      'Deep UV violet family', 258, { shift: 36 }],
+  ['indigo',    'Indigo Night',     'Indigo family, midnight denim', 245, { al: 66 }],
+  // blues
+  ['navy',      'Midnight Navy',    'Navy family, deep sea at night', 224, { as: 82, al: 60 }],
+  ['sky',       'Sky Blue',         'Open-sky blues, light and airy', 198, { al: 66 }],
+  ['ice',       'Ice Blue',         'Glacier blues, quiet and pale', 192, { ss: 10, al: 70 }],
+  ['steel',     'Steel Blue',       'Muted steel, professional calm', 215, { ss: 8, as: 45, al: 72 }],
+  ['neonblue',  'Neon Blue',        'Saturated electric blue', 222],
+  // magentas / pinks
+  ['magenta',   'Cyberpunk',        'Magenta family, neon city night', 300, { shift: 50 }],
+  ['vapor',     'Vaporwave',        'Pink and cyan, retro-future', 310, { shift: 130 }],
+  ['pink',      'Hot Pink',         'Vivid pink family', 330, { al: 66 }],
+  ['rose',      'Rose Gold',        'Soft rose family, warm and gentle', 338, { ss: 18, al: 68 }],
+  ['sakura',    'Sakura',           'Cherry blossom pinks, spring dark', 325, { ss: 16, al: 74 }],
+  // reds — the requested family
+  ['blood',     'Blood Red',        'Deep blood reds with ember glow', 354, { shift: -16, as: 84, al: 60 }],
+  ['crimson',   'Crimson',          'Rich crimson family, dark and royal', 350, { ss: 30, al: 56 }],
+  ['wine',      'Burgundy Wine',    'Wine-dark family, aged and deep', 345, { ss: 26, al: 54, shift: -20 }],
+  // warm
+  ['lava',      'Molten Lava',      'Lava oranges with red core', 14, { shift: -18 }],
+  ['coral',     'Coral',            'Warm coral family, beach at dusk', 6, { al: 68 }],
+  ['amber',     'Amber Gold',       'Golden amber family, honey light', 40, { shift: 15, al: 60 }],
+  ['peach',     'Peach',            'Soft peach family, warm pastel', 22, { ss: 16, al: 70 }],
+  ['mocha',     'Coffee Mocha',     'Coffee-brown family, cafe hours', 27, { ss: 14, as: 50, al: 64 }],
+  ['copper',    'Copper',           'Metallic copper with warm edge', 30, { as: 72, al: 60 }],
+  ['gold',      'Royal Gold',       'Regal golds, throne room warm', 46, { al: 58 }],
+  // mono
+  ['graphite',  'Graphite',         'Near-mono greys, white accent', 220, { ss: 5, as: 8, al: 86 }],
+];
+
+for (const [id, name, description, h, o] of FAMILIES) {
+  THEMES[id] = family(id, name, description, h, o || {});
+}
+
+/** Build a custom theme from raw maker settings (used by the theme screen). */
+export function makeCustom({ h = 158, h2 = 200, ss = 24, as = 86, al = 62 } = {}) {
+  return {
+    id: 'custom',
+    name: 'My Theme',
+    description: `Custom family — hue ${Math.round(h)}°, accent pair ${Math.round(h)}°/${Math.round(((h2 % 360) + 360) % 360)}°`,
+    colors: {
+      '--bg': '#000000',
+      '--s1': hsl(h, ss, 3.5),
+      '--s2': hsl(h, ss, 6),
+      '--s3': hsl(h, ss + 3, 9),
+      '--line': hsl(h, ss, 10.5),
+      '--line2': hsl(h, ss, 15.5),
+      '--green': hsl(h, as, al),
+      '--green-dim': hsl(h, as, Math.max(28, al - 17)),
+      '--cyan': hsl(h2, 90, Math.min(80, al + 3)),
+      '--cyan-dim': hsl(h2, 90, Math.max(30, al - 13)),
+      '--fg': hsl(h, 26, 93),
+      '--fg2': hsl(h, 16, 70),
+      '--fg3': hsl(h, 12, 50),
+      '--warn': '#FFD166',
+      '--bad': '#FF5C7A',
+    },
+    isDark: true,
+  };
+}
+
 export function getCurrentThemeId() {
   try {
     return localStorage.getItem(THEME_KEY) || 'dark';
