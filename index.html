@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<meta name="theme-color" content="#000000" />
+<meta name="description" content="SurBox - ad-free music player: search, charts, artists, playlists, radio, EQ and background play. No login." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bangers&family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&display=swap" rel="stylesheet" />
+<link rel="manifest" href="./manifest.webmanifest" />
+<title>SurBox — ad-free music player</title>
+<style>
+#error-display {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #1a1a1a;
+  color: #ff6b6b;
+  padding: 20px;
+  font-family: monospace;
+  font-size: 14px;
+  overflow: auto;
+  z-index: 9999;
+}
+#error-display h2 {
+  color: #ff6b6b;
+  margin-top: 0;
+}
+#error-display p {
+  color: #fff;
+}
+#error-display pre {
+  background: #000;
+  padding: 15px;
+  border-radius: 4px;
+  overflow: auto;
+  color: #fff;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+#error-display button {
+  margin-top: 20px;
+  padding: 12px 24px;
+  background: #4ecdc4;
+  color: #000;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: bold;
+}
+</style>
+</head>
+<body>
+<div id="error-display">
+  <h2>Something went wrong</h2>
+  <p id="error-message"></p>
+  <pre id="error-stack"></pre>
+  <button onclick="location.reload()">Reload Page</button>
+</div>
+<div id="root"></div>
+<script>
+// Last-resort error screen, for one situation only: the app never renders and
+// a phone user is left staring at blank white with no console to check.
+//
+// It must NOT appear for anything else. The panel covers the whole viewport at
+// z-index 9999, so putting it up over a working app makes every control
+// untappable.
+//
+// Two guards. First, an error that arrives before React mounts is normal, so
+// the decision is deferred rather than taken immediately - by the time the
+// timer fires the app has usually rendered and there is nothing to report.
+// Second, it only ever shows if #root is still empty at that point.
+(function () {
+  var reported = false;
+
+  function rendered() {
+    var root = document.getElementById('root');
+    return !!(root && root.children.length);
+  }
+
+  function report(title, detail) {
+    if (reported) return;
+    reported = true;
+    setTimeout(function () {
+      if (rendered()) return;          // it recovered - stay out of the way
+      var display = document.getElementById('error-display');
+      if (!display) return;
+      display.style.display = 'block';
+      document.getElementById('error-message').textContent = title;
+      document.getElementById('error-stack').textContent = detail || '';
+    }, 4000);
+  }
+
+  window.onerror = function (msg, url, line, col, error) {
+    report(String(msg),
+           error && error.stack ? error.stack : url + ':' + line + ':' + col);
+    return false;
+  };
+
+  window.onunhandledrejection = function (event) {
+    var reason = event.reason;
+    report('Could not finish loading',
+           reason ? (reason.stack || String(reason)) : '');
+  };
+})();
+</script>
+<script type="module" src="/src/main.jsx"></script>
+</body>
+</html>

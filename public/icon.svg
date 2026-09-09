@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<rect width="512" height="512" rx="112" fill="#000"/>
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0" stop-color="#00FF9C"/><stop offset="1" stop-color="#00E5FF"/></linearGradient></defs>
+<!-- SurBox: two beamed eighth notes -->
+<g fill="url(#g)">
+<ellipse cx="182" cy="372" rx="58" ry="44" transform="rotate(-18 182 372)"/>
+<ellipse cx="342" cy="344" rx="58" ry="44" transform="rotate(-18 342 344)"/>
+<rect x="228" y="148" width="22" height="228" rx="11"/>
+<rect x="388" y="120" width="22" height="228" rx="11"/>
+<path d="M228 148 L410 116 L410 178 L228 210 Z"/>
+</g>
+</svg>

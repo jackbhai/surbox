@@ -1,0 +1,49 @@
+{
+  "name": "SurBox — Ad-free Music Player",
+  "short_name": "SurBox",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "browser"],
+  "orientation": "any",
+  "background_color": "#000000",
+  "theme_color": "#00FF9C",
+  "description": "Ad-free music player - search, charts, artists, playlists, radio, EQ and background play. No login, works offline.",
+  "categories": ["music", "entertainment"],
+  "dir": "ltr",
+  "lang": "en",
+  "launch_handler": {
+    "client_mode": ["navigate-existing", "auto"]
+  },
+  "handle_links": "preferred",
+  "edge_side_panel": {
+    "preferred_width": 400
+  },
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" },
+    { "src": "./icon.svg", "sizes": "192x192", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "./icon.svg", "sizes": "512x512", "type": "image/svg+xml", "purpose": "maskable" }
+  ],
+  "screenshots": [
+    {
+      "src": "./icon.svg",
+      "sizes": "1280x720",
+      "type": "image/svg+xml",
+      "form_factor": "wide",
+      "label": "SurBox - ad-free music player"
+    },
+    {
+      "src": "./icon.svg",
+      "sizes": "720x1280",
+      "type": "image/svg+xml",
+      "form_factor": "narrow",
+      "label": "SurBox - search, charts, artists, playlists, radio"
+    }
+  ],
+  "protocol_handlers": [
+    {
+      "protocol": "web+surbox",
+      "url": "./#%s"
+    }
+  ]
+}
