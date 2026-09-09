@@ -336,7 +336,7 @@ export function FullPlayer() {
      itself was computed in the hook at the top of the component.) */
 
   return (
-    <div className="full art" style={artStyle(pal)}>
+    <div className="full" style={artStyle(pal)}>
       <div className="full-bg" aria-hidden="true">
         {t?.art
           ? <img key={t.art} src={t.art} alt="" draggable={false} />
