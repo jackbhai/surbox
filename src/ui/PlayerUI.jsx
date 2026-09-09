@@ -80,6 +80,10 @@ export function MiniPlayer() {
 /* ------------------------------------------------------------- full screen */
 export function FullPlayer() {
   const p = usePlayer();
+  /* The palette hook must live ABOVE the early return below — a hook after
+     a conditional return changes the hook count between renders and React
+     dies with #310 the moment the player closes. */
+  const pal = useArtTheme(p?.track?.art);
   const [tab, setTab] = useState('art');       // art | lyrics | eq | queue
   const [sleepOpen, setSleepOpen] = useState(false);
   const [shared, setShared] = useState(false);
@@ -328,8 +332,8 @@ export function FullPlayer() {
   const t = p.track;
   /* The player dresses in the artwork: palette accents re-skin every child
      through the two theme variables, and the art itself becomes a static,
-     heavily blurred, low-opacity wash behind the whole screen. */
-  const pal = useArtTheme(t?.art);
+     heavily blurred, low-opacity wash behind the whole screen. (The palette
+     itself was computed in the hook at the top of the component.) */
 
   return (
     <div className="full art" style={artStyle(pal)}>
