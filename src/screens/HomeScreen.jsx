@@ -88,6 +88,20 @@ export default function HomeScreen({ go }) {
   const hist = history().slice(0, 10);
   const top = topPlayed(10);
   const stats = listenStats();
+
+  /* The orbit: artists you actually spend time on, plus the ones you picked
+     yourself — deduped, ten at most. */
+  const artistOrbs = [
+    ...stats.topArtists.map((a) => ({ name: a.name, sub: 'most heard' })),
+    ...(prefs.artists || []).slice(0, 8).map((a) => ({ name: a, sub: 'your pick' })),
+  ].filter((v, i, arr) => arr.findIndex((x) => x.name === v.name) === i).slice(0, 10);
+
+  const playOrb = async (name) => {
+    try {
+      const r = await searchMusic(name, { deep: false });
+      if (r?.tracks?.length) { player.setRadio(true); playList(player, r.tracks, 0); }
+    } catch {}
+  };
   const night = (() => { const h = new Date().getHours(); return h >= 21 || h < 5; })();
   const featured = recs?.[0];
   const heroTitle = night ? 'GOOD NIGHT' : 'SOUNDS BEYOND LIMITS';

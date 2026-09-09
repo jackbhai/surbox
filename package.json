@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "verify:render": "vite build --ssr scripts/ssr-smoke.jsx --outDir .ssr-smoke --emptyOutDir && node .ssr-smoke/ssr-smoke.js"
   },
   "engines": {
     "node": ">=18.0.0"
