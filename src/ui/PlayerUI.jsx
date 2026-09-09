@@ -10,6 +10,274 @@ import { Icon } from './icons';
 const mmss = (s) => (!s || !isFinite(s)) ? '0:00'
   : `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
+/* ------------------------------------------- EQ v2 + Audio Lab (v2.4) */
+const buzz = () => { try { navigator.vibrate?.(8); } catch {} };   // thumb feedback
+
+/* Exact biquad math — the same RBJ-cookbook formulas the Web Audio spec
+   uses, so the curve below is what the filters really do, not a sketch. */
+const rbj = (type, f0, gainDb, Q, Fs) => {
+  const A = Math.pow(10, gainDb / 40);
+  const w0 = (2 * Math.PI * f0) / Fs, cw = Math.cos(w0), sw = Math.sin(w0);
+  if (type === 'peaking') {
+    const al = sw / (2 * Q);
+    return { b0: 1 + al * A, b1: -2 * cw, b2: 1 - al * A, a0: 1 + al / A, a1: -2 * cw, a2: 1 - al / A };
+  }
+  const al = (sw / 2) * Math.SQRT2;                        // shelf slope S = 1
+  const sq = 2 * Math.sqrt(A) * al;
+  if (type === 'lowshelf') return {
+    b0: A * ((A + 1) - (A - 1) * cw + sq), b1: 2 * A * ((A - 1) - (A + 1) * cw),
+    b2: A * ((A + 1) - (A - 1) * cw - sq), a0: (A + 1) + (A - 1) * cw + sq,
+    a1: -2 * ((A - 1) + (A + 1) * cw), a2: (A + 1) + (A - 1) * cw - sq,
+  };
+  return {                                                  // highshelf
+    b0: A * ((A + 1) + (A - 1) * cw + sq), b1: -2 * A * ((A - 1) + (A + 1) * cw),
+    b2: A * ((A + 1) + (A - 1) * cw - sq), a0: (A + 1) - (A - 1) * cw + sq,
+    a1: 2 * ((A - 1) - (A + 1) * cw), a2: (A + 1) - (A - 1) * cw - sq,
+  };
+};
+const magDb = (c, f, Fs) => {
+  const w = (2 * Math.PI * f) / Fs, c1 = Math.cos(w), c2 = Math.cos(2 * w);
+  const b = c.b0 ** 2 + c.b1 ** 2 + c.b2 ** 2 + 2 * (c.b0 * c.b1 + c.b1 * c.b2) * c1 + 2 * c.b0 * c.b2 * c2;
+  const a = c.a0 ** 2 + c.a1 ** 2 + c.a2 ** 2 + 2 * (c.a0 * c.a1 + c.a1 * c.a2) * c1 + 2 * c.a0 * c.a2 * c2;
+  return 10 * Math.log10(Math.max(b, 1e-12) / Math.max(a, 1e-12));
+};
+
+/** Live frequency-response curve: ten EQ bands + bass & treble shelves,
+ *  summed and drawn on a log-frequency axis. Re-draws on every slider
+ *  move, theme change and resize. */
+function EqCurve({ eq, bass, treb }) {
+  const cv = useRef(null);
+  useEffect(() => {
+    const c = cv.current; if (!c) return;
+    const draw = () => {
+      const W = c.clientWidth, H = c.clientHeight || 108;
+      if (!W) return;
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      c.width = W * dpr; c.height = H * dpr;
+      const g = c.getContext('2d');
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      g.clearRect(0, 0, W, H);
+      const css = getComputedStyle(document.documentElement);
+      const green = (css.getPropertyValue('--green') || '#3dff8f').trim();
+      const cyan = (css.getPropertyValue('--cyan') || '#39e6ff').trim();
+      const Fs = chain.ctx?.sampleRate || 48000;
+      const bands = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+      const cos = bands.map((f, i) =>
+        rbj(i === 0 ? 'lowshelf' : i === bands.length - 1 ? 'highshelf' : 'peaking', f, eq[i] || 0, 1.1, Fs));
+      const cb = rbj('lowshelf', 200, bass || 0, 1, Fs);
+      const ct = rbj('highshelf', 3200, treb || 0, 1, Fs);
+      const lo = 20, hi = 20000, N = 160, pts = [];
+      let m = 9;
+      for (let i = 0; i <= N; i++) {
+        const f = lo * Math.pow(hi / lo, i / N);
+        let db = magDb(cb, f, Fs) + magDb(ct, f, Fs);
+        for (const cc of cos) db += magDb(cc, f, Fs);
+        if (Math.abs(db) > m) m = Math.abs(db);
+        pts.push([f, db]);
+      }
+      m = Math.min(21, Math.ceil(m / 3) * 3);
+      const X = (f) => (Math.log(f / lo) / Math.log(hi / lo)) * W;
+      const Y = (db) => H / 2 - (db / m) * (H / 2 - 7);
+      // grid — verticals at musical frequencies, horizontals in dB
+      g.lineWidth = 1; g.font = '9px ui-monospace, monospace'; g.textAlign = 'center';
+      for (const [f, lb] of [[31, '31'], [125, '125'], [500, '500'], [2000, '2k'], [8000, '8k']]) {
+        g.strokeStyle = 'rgba(255,255,255,.06)';
+        g.beginPath(); g.moveTo(X(f), 4); g.lineTo(X(f), H - 12); g.stroke();
+        g.fillStyle = 'rgba(255,255,255,.3)'; g.fillText(lb, X(f), H - 3);
+      }
+      for (const d of [0, -m / 2, m / 2, -m, m]) {
+        g.strokeStyle = d === 0 ? 'rgba(255,255,255,.14)' : 'rgba(255,255,255,.05)';
+        g.setLineDash(d === 0 ? [4, 4] : []);
+        g.beginPath(); g.moveTo(0, Y(d)); g.lineTo(W, Y(d)); g.stroke();
+        g.setLineDash([]);
+      }
+      g.textAlign = 'left'; g.fillStyle = 'rgba(255,255,255,.3)';
+      g.fillText('+' + m / 2, 4, Y(m / 2) - 3); g.fillText(String(-m / 2), 4, Y(-m / 2) + 10);
+      // the curve itself — gradient stroke, soft fill beneath
+      const grad = g.createLinearGradient(0, 0, W, 0);
+      grad.addColorStop(0, green); grad.addColorStop(1, cyan);
+      g.beginPath();
+      pts.forEach(([f, db], i) => (i ? g.lineTo(X(f), Y(db)) : g.moveTo(X(f), Y(db))));
+      g.strokeStyle = grad; g.lineWidth = 2; g.lineJoin = 'round'; g.stroke();
+      const fill = g.createLinearGradient(0, 0, 0, H);
+      fill.addColorStop(0, 'rgba(120,255,190,.16)'); fill.addColorStop(1, 'rgba(120,255,190,0)');
+      g.lineTo(W, H); g.lineTo(0, H); g.closePath(); g.fillStyle = fill; g.fill();
+      // a dot at each band's centre frequency, at its exact response
+      for (let i = 0; i < bands.length; i++) {
+        const f = bands[i];
+        const db = magDb(cb, f, Fs) + magDb(ct, f, Fs) + cos.reduce((a, cc) => a + magDb(cc, f, Fs), 0);
+        g.beginPath(); g.arc(X(f), Y(db), 2.6, 0, 7);
+        g.fillStyle = (eq[i] || 0) ? '#fff' : 'rgba(255,255,255,.35)'; g.fill();
+      }
+    };
+    draw();
+    const mo = new MutationObserver(draw);   // theme swaps rewrite CSS vars
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'class'] });
+    window.addEventListener('resize', draw);
+    return () => { mo.disconnect(); window.removeEventListener('resize', draw); };
+  }, [eq, bass, treb]);
+  return (
+    <div className="eqcurve-wrap" aria-label="Live equaliser response">
+      <canvas ref={cv} className="eqcurve" />
+    </div>
+  );
+}
+
+/* Custom EQ curves the user saved — theirs to name, keep and delete. */
+const CP_KEY = 'omni:eqpresets';
+const readCPs = () => {
+  try { const o = JSON.parse(localStorage.getItem(CP_KEY) || '{}'); return o && typeof o === 'object' ? o : {}; }
+  catch { return {}; }
+};
+
+/** The Audio tab: EQ v2 (curve, presets, bands, tone) + the Audio Lab. */
+function EqTab() {
+  const p = usePlayer();
+  const [cps, setCps] = useState(readCPs);
+  const [cpName, setCpName] = useState('');
+  const lab = p.lab || {};
+  const canLab = !!p.eqCapable;
+
+  const saveCp = () => {
+    const n = cpName.trim().slice(0, 18);
+    if (!n) return;
+    const next = { ...cps, [n]: [...p.eq] };
+    try { localStorage.setItem(CP_KEY, JSON.stringify(next)); } catch {}
+    setCps(next); setCpName(''); buzz();
+  };
+  const delCp = (n, e) => {
+    e.stopPropagation();
+    const next = { ...cps }; delete next[n];
+    try { localStorage.setItem(CP_KEY, JSON.stringify(next)); } catch {}
+    setCps(next);
+  };
+  const applyCp = (n) => { buzz(); cps[n].forEach((g, i) => p.setEqBand(i, g)); };
+  const eqSig = (p.eq || []).join(',');
+
+  const seg = (opts, key) => (
+    <div className="seg" role="group">
+      {opts.map(([v, lb]) => (
+        <button key={v} className={lab[key] === v ? 'on' : ''}
+          onClick={() => { buzz(); p.setLab({ [key]: v }); }}>{lb}</button>))}
+    </div>
+  );
+  const tgl = (key, onSet) => (
+    <button className={`tgl${lab[key] ? ' on' : ''}`} role="switch" aria-checked={!!lab[key]}
+      onClick={() => { buzz(); p.setLab({ [key]: !lab[key] }); }}><span className="knob" /></button>
+  );
+
+  return (
+    <div>
+      {!canLab && (
+        <div className="note" style={{ marginTop: 0, marginBottom: 12 }}>
+          The equaliser and Audio Lab cannot run on streamed tracks — routing
+          them through Web Audio silences them, because a browser will not
+          expose audio it fetched from another site. Downloaded tracks get the
+          full lab; speed always works, and playback is never disturbed.
+        </div>
+      )}
+      <EqCurve eq={p.eq || []} bass={p.bass || 0} treb={p.treb || 0} />
+      <div className="btnrow" style={{ marginBottom: 8 }}>
+        {Object.keys(PRESETS).map((n) => (
+          <button key={n} className={`cat ${p.preset === n ? 'on' : ''}`}
+            onClick={() => { buzz(); p.applyPreset(n); }}>{n}</button>))}
+      </div>
+      {Object.keys(cps).length > 0 && (
+        <div className="btnrow" style={{ marginBottom: 8 }}>
+          {Object.keys(cps).map((n) => (
+            <button key={n} className={`cat ${eqSig === cps[n].join(',') ? 'on' : ''}`} onClick={() => applyCp(n)}>
+              {n}
+              <span className="chipx" role="button" aria-label={`Delete ${n}`}
+                onClick={(e) => delCp(n, e)}><Icon n="x" size={11} /></span>
+            </button>))}
+        </div>
+      )}
+      <div className="cpsrow">
+        <input className="cpin" placeholder="Save this curve as…" maxLength={18} value={cpName}
+          onChange={(e) => setCpName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveCp()} />
+        <button className="cat" onClick={saveCp} disabled={!cpName.trim()}>
+          <Icon n="plus" size={12} /> Save</button>
+      </div>
+      <div className="eqrow" style={{ marginTop: 14 }}>
+        {p.BANDS.map((f, i) => (
+          <div key={f} className="eqband">
+            <input type="range" min="-12" max="12" step="1" value={p.eq[i]}
+              onChange={(e) => p.setEqBand(i, +e.target.value)} className="vert" />
+            <span className="eqhz">{f >= 1000 ? f / 1000 + 'k' : f}</span>
+            <span className="eqdb">{p.eq[i] > 0 ? '+' : ''}{p.eq[i]}</span>
+          </div>))}
+      </div>
+      <div className="hr" />
+      <label className="dim sm">Bass {p.bass > 0 ? '+' : ''}{p.bass} dB</label>
+      <input type="range" min="-15" max="15" value={p.bass} onChange={(e) => p.setBassV(+e.target.value)} />
+      <label className="dim sm">Treble {p.treb > 0 ? '+' : ''}{p.treb} dB</label>
+      <input type="range" min="-15" max="15" value={p.treb} onChange={(e) => p.setTrebV(+e.target.value)} />
+      <label className="dim sm">Speed {p.rate}×</label>
+      <input type="range" min="0.5" max="2" step="0.05" value={p.rate} onChange={(e) => p.setRateV(+e.target.value)} />
+      <div className="btnrow">
+        <button className={`cat ${p.comp ? 'on' : ''}`} onClick={() => { buzz(); p.setCompV(!p.comp); }}>
+          <Icon n="radio" size={13} /> Loudness</button>
+        <button className="cat" onClick={() => { buzz(); p.applyPreset('Flat'); p.setBassV(0); p.setTrebV(0); p.setRateV(1); }}>
+          <Icon n="refresh" size={13} /> Reset EQ</button>
+      </div>
+
+      {/* ------------------------------------------- Audio Lab */}
+      <div className="hr" />
+      <div className="labhd"><Icon n="sliders" size={15} /> Audio Lab
+        <span className="dim sm" style={{ textTransform: 'none', letterSpacing: 0 }}>
+          — real DSP on the live graph</span>
+      </div>
+      <div className={`labgrid${canLab ? '' : ' off'}`}>
+        <div className="labcell">
+          <div className="lablbl"><Icon n="mic" size={14} /> Voice</div>
+          {seg([['normal', 'Normal'], ['karaoke', 'Karaoke'], ['vocals', 'Vocals']], 'mode')}
+          <span className="dim sm labhint">
+            {lab.mode === 'karaoke' ? 'Vocals cancelled, instruments kept — sing over the instrumental.'
+              : lab.mode === 'vocals' ? 'Isolates the centre channel where vocals live.'
+                : 'The original stereo mix.'}
+          </span>
+        </div>
+        <div className="labcell">
+          <div className="lablbl"><Icon n="pitch" size={14} /> Pitch
+            <b className={lab.pitch ? '' : 'dim'}>{lab.pitch > 0 ? '+' : ''}{lab.pitch} st</b></div>
+          <input type="range" min="-6" max="6" step="1" value={lab.pitch || 0}
+            onChange={(e) => p.setLab({ pitch: +e.target.value })} />
+          <span className="dim sm labhint">Shifts the key up or down without touching speed.</span>
+          {lab.pitch !== 0 && <button className="labrst" onClick={() => { buzz(); p.setLab({ pitch: 0 }); }}>Reset pitch</button>}
+        </div>
+        <div className="labcell">
+          <div className="lablbl"><Icon n="orbit" size={14} /> 8D orbit {tgl('dim')}</div>
+          {lab.dim && (<>
+            <input type="range" min="0.05" max="0.5" step="0.01" value={lab.dimSpeed || 0.12}
+              onChange={(e) => p.setLab({ dimSpeed: +e.target.value })} />
+            <span className="dim sm labhint">{(lab.dimSpeed || 0.12).toFixed(2)} orbits a second — headphones on.</span>
+          </>)}
+          {!lab.dim && <span className="dim sm labhint">The sound circles around your head.</span>}
+        </div>
+        <div className="labcell">
+          <div className="lablbl"><Icon n="ripple" size={14} /> Reverb</div>
+          {seg([['off', 'Off'], ['room', 'Room'], ['club', 'Club'], ['hall', 'Hall'], ['stadium', 'Stadium']], 'reverb')}
+          {lab.reverb !== 'off' && (<>
+            <input type="range" min="0.1" max="0.85" step="0.05" value={lab.wet || 0.3}
+              onChange={(e) => p.setLab({ wet: +e.target.value })} />
+            <span className="dim sm labhint">{Math.round((lab.wet || 0.3) * 100)}% wet — synthetic impulse responses, zero loops.</span>
+          </>)}
+        </div>
+        <div className="labcell labtgl">
+          <div className="lablbl" style={{ margin: 0 }}><Icon n="volume" size={14} /> Mono</div>
+          {tgl('mono')}
+          <span className="dim sm labhint">Both ears get the same mix.</span>
+        </div>
+        <div className="labcell labtgl">
+          <div className="lablbl" style={{ margin: 0 }}><Icon n="moon" size={14} /> Night mode</div>
+          {tgl('night')}
+          <span className="dim sm labhint">Squashes peaks so quiet parts survive low volume.</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------- mini bar */
 export function MiniPlayer() {
   const p = usePlayer();
@@ -470,40 +738,7 @@ export function FullPlayer() {
           </div>
           </div>)}
 
-        {tab === 'eq' && (
-          <div>
-            {!p.eqCapable && (
-              <div className="note" style={{ marginTop: 0, marginBottom: 12 }}>
-                The equaliser cannot run on streamed tracks. Routing them through
-                it silences them — a browser will not expose audio it fetched
-                from another site. Speed still works, and playback is untouched.
-              </div>)}
-            <div className="btnrow" style={{ marginBottom: 14 }}>
-              {Object.keys(PRESETS).map((n) => (
-                <button key={n} className={`cat ${p.preset === n ? 'on' : ''}`}
-                  onClick={() => p.applyPreset(n)}>{n}</button>))}
-            </div>
-            <div className="eqrow">
-              {p.BANDS.map((f, i) => (
-                <div key={f} className="eqband">
-                  <input type="range" min="-12" max="12" step="1" value={p.eq[i]}
-                    onChange={(e) => p.setEqBand(i, +e.target.value)} className="vert" />
-                  <span className="eqhz">{f >= 1000 ? f / 1000 + 'k' : f}</span>
-                  <span className="eqdb">{p.eq[i] > 0 ? '+' : ''}{p.eq[i]}</span>
-                </div>))}
-            </div>
-            <div className="hr" />
-            <label className="dim sm">Bass {p.bass > 0 ? '+' : ''}{p.bass} dB</label>
-            <input type="range" min="-15" max="15" value={p.bass} onChange={(e) => p.setBassV(+e.target.value)} />
-            <label className="dim sm">Treble {p.treb > 0 ? '+' : ''}{p.treb} dB</label>
-            <input type="range" min="-15" max="15" value={p.treb} onChange={(e) => p.setTrebV(+e.target.value)} />
-            <label className="dim sm">Speed {p.rate}×</label>
-            <input type="range" min="0.5" max="2" step="0.05" value={p.rate} onChange={(e) => p.setRateV(+e.target.value)} />
-            <div className="btnrow">
-              <button className={`cat ${p.comp ? 'on' : ''}`} onClick={() => p.setCompV(!p.comp)}><Icon n="radio" size={13} /> Loudness</button>
-              <button className="cat" onClick={() => { p.applyPreset('Flat'); p.setBassV(0); p.setTrebV(0); p.setRateV(1); }}><Icon n="refresh" size={13} /> Reset</button>
-            </div>
-          </div>)}
+        {tab === 'eq' && <EqTab />}
 
         {tab === 'queue' && (
           <div className="list">

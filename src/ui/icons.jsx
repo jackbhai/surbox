@@ -158,6 +158,12 @@ export const Walk = (p) => <S {...p}><circle cx="13.4" cy="4.4" r="1.5" /><path 
 export const Navigation = (p) => <S {...p}><path d="M12 3.2 19.6 20.4 12 16.6l-7.6 3.8L12 3.2z" /></S>;
 export const BellOff = (p) => <S {...p}><path d="M6.4 16.2v-4.6a5.6 5.6 0 0 1 8.2-5M17.6 11.6v-0.1M17.6 11.6v4.6l1.6 2.4H7.2M4.8 18.6l1.6-2.4M3 3l18 18" /></S>;
 
+/** Audio-lab glyphs — drawn in the same 24×24 stroke style as the rest. */
+export const Sliders = (p) => <S {...p}><path d="M5 3.5v17M12 3.5v17M19 3.5v17" /><circle cx="5" cy="9.5" r="2.2" /><circle cx="12" cy="15" r="2.2" /><circle cx="19" cy="7" r="2.2" /></S>;
+export const Orbit = (p) => <S {...p}><circle cx="12" cy="12" r="3" /><path d="M18.4 8.2a8.2 8.2 0 1 1-12.8 0" /><circle cx="18.4" cy="8.2" r="1.3" fill="currentColor" stroke="none" /></S>;
+export const Ripple = (p) => <S {...p}><circle cx="12" cy="12" r="2.2" /><path d="M12 5.6a6.4 6.4 0 0 1 0 12.8M12 2a10 10 0 0 1 0 20" /><path d="M12 5.6a6.4 6.4 0 0 0 0 12.8" opacity=".45" /></S>;
+export const Pitch = (p) => <S {...p}><path d="M9 17.5V6l8-1.8v9.6" /><circle cx="6.6" cy="17.5" r="2.4" /><circle cx="14.6" cy="13.8" r="2.4" /><path d="M18.8 17.8v4M16.8 19.8h4" /></S>;
+
 /** Registry so tools can be declared with a plain string name. */
 export const ICONS = {
   sun: Sun, cloud: Cloud, drop: Drop, wind: Wind,
@@ -181,6 +187,7 @@ export const ICONS = {
   volume: Volume, volumeoff: VolumeOff, wave: Wave, bolt: Bolt, moon: Moon,
   cast: Cast, expand: Expand, max: Max, min: Min, down: Down, up: Up, plus: Plus, trash: Trash, queue: Queue, mic: Mic,
   map: MapIcon, bell: Bell, bellof: BellOff, flag: Flag, walk: Walk, navigation: Navigation,
+  sliders: Sliders, orbit: Orbit, ripple: Ripple, pitch: Pitch,
 };
 
 /** <Icon n="bus" size={22} /> */

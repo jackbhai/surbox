@@ -1625,3 +1625,69 @@ input[type="color"] {
 .mkdot{width:13px;height:13px;border-radius:50%;flex:0 0 auto;box-shadow:0 0 8px currentColor}
 .mkv{flex:0 0 34px;text-align:right;font-size:11px;color:var(--fg3)}
 .mkrow input[type=range]{flex:1}
+
+/* ============================= v2.4 — EQ curve + Audio Lab ================= */
+/* Live response curve: the canvas is drawn at true device pixels and shows
+   the exact combined magnitude of the ten bands plus tone shelves. */
+.eqcurve-wrap{position:relative;background:rgba(255,255,255,.03);
+  border:1px solid rgba(255,255,255,.08);border-radius:14px;
+  padding:10px 8px 6px;margin:2px 0 14px;overflow:hidden}
+.eqcurve-wrap::before{content:"";position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(120% 90% at 20% 0%,rgba(0,255,156,.05),transparent 55%),
+             radial-gradient(120% 90% at 85% 100%,rgba(0,229,255,.05),transparent 55%)}
+.eqcurve{width:100%;height:108px;display:block;position:relative}
+
+/* Custom-preset save row */
+.cpsrow{display:flex;gap:8px;margin:2px 0 4px}
+.cpin{flex:1;min-width:0;background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.1);
+  border-radius:10px;color:var(--fg);font:inherit;font-size:13px;padding:8px 12px;outline:none;
+  transition:border-color .2s}
+.cpin:focus{border-color:color-mix(in srgb,var(--cyan) 55%,transparent)}
+.cpin::placeholder{color:var(--fg3)}
+.chipx{margin-left:6px;display:inline-flex;align-items:center;opacity:.5;transition:opacity .15s}
+.chipx:hover{opacity:1}
+
+/* Lab header + grid */
+.labhd{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:800;
+  letter-spacing:.08em;text-transform:uppercase;margin:2px 0 12px;color:var(--fg)}
+.labhd .ico{color:var(--green)}
+.labgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;transition:opacity .3s}
+.labgrid.off{opacity:.38;pointer-events:none;filter:saturate(.4)}
+.labcell{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:9px;min-width:0}
+.lablbl{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:650;color:var(--fg)}
+.lablbl .ico{color:var(--cyan);flex:0 0 auto}
+.lablbl b{margin-left:auto;font-family:var(--mono,ui-monospace,monospace);font-size:12px;color:var(--cyan)}
+.lablbl b.dim{color:var(--fg3)}
+.labhint{font-size:11px;line-height:1.4}
+.labrst{align-self:flex-start;background:transparent;border:0;color:var(--cyan);
+  font-size:11px;font-weight:600;cursor:pointer;padding:0;font-family:inherit}
+.labcell.labtgl{flex-direction:row;align-items:center;gap:10px;flex-wrap:wrap}
+.labcell.labtgl .labhint{flex:1 1 100%;margin:0}
+
+/* Segmented pickers (voice / reverb) */
+.seg{display:flex;background:rgba(0,0,0,.38);border:1px solid rgba(255,255,255,.08);
+  border-radius:11px;padding:3px;gap:3px}
+.seg button{flex:1;border:0;background:transparent;color:var(--fg3);font-size:11.5px;
+  font-weight:650;padding:6px 2px;border-radius:8px;cursor:pointer;font-family:inherit;
+  white-space:nowrap;transition:color .2s,background .2s}
+.seg button.on{color:var(--fg);
+  background:linear-gradient(135deg,color-mix(in srgb,var(--green) 20%,transparent),
+                             color-mix(in srgb,var(--cyan) 20%,transparent));
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--cyan) 35%,transparent)}
+
+/* Switch pill */
+.tgl{position:relative;width:44px;height:25px;border-radius:99px;flex:0 0 auto;
+  border:1px solid rgba(255,255,255,.15);background:rgba(0,0,0,.45);cursor:pointer;padding:0;
+  transition:background .25s,border-color .25s;margin-left:auto}
+.tgl .knob{position:absolute;top:2.5px;left:3px;width:18px;height:18px;border-radius:50%;
+  background:#7d8a90;transition:transform .25s cubic-bezier(.34,1.56,.5,1),background .25s}
+.tgl.on{border-color:color-mix(in srgb,var(--cyan) 50%,transparent);
+  background:linear-gradient(135deg,color-mix(in srgb,var(--green) 45%,transparent),
+                             color-mix(in srgb,var(--cyan) 45%,transparent))}
+.tgl.on .knob{transform:translateX(19px);background:#fff}
+
+@media (max-width:430px){
+  .labgrid{grid-template-columns:1fr}
+  .seg button{font-size:11px;padding:6px 1px}
+}

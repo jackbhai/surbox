@@ -31,7 +31,96 @@ export const PRESETS = {
   Treble: [0,0,0,0,0,2,4,6,8,8],
   'Lo-Fi': [5,4,2,0,-2,-4,-6,-8,-9,-10],
   Party: [8,6,3,0,-1,0,3,6,7,7],
+  Rock: [5,4,2,0,-1,-1,2,4,5,6],
+  Jazz: [3,2,1,2,-1,-1,0,1,2,3],
+  Classical: [4,3,2,0,0,0,-1,-1,2,3],
+  EDM: [7,6,2,0,-2,2,3,5,6,7],
+  Podcast: [-4,-3,0,4,5,4,2,0,-1,-2],
+  'Small Speakers': [8,7,4,1,0,0,1,2,3,4],
+  'Late Night': [2,1,0,0,0,1,2,3,4,4],
 };
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   AUDIO LAB — the pieces the Chain graph is extended with.
+
+   PITCH SHIFTER (in an AudioWorklet, zero dependencies)
+     A dual-tap delay-line shifter: the read head's delay sweeps linearly
+     (dD/dt = 1 - ratio), wrapping within [0, 2G). Two taps offset by half the
+     wrap are crossfaded with sin/cos (equal-power) weights that are each ZERO
+     at their own tap's wrap moment — so the inherent wrap discontinuity lands
+     where that tap is inaudible. ±6 semitones before the tremolo artifacts
+     get objectionable; 0 semitones bypasses the stage entirely (a constant
+     two-tap mix would comb-filter).
+   ═══════════════════════════════════════════════════════════════════════════ */
+const PITCH_WORKLET = `
+class SBPitch extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    return [{ name: 'ratio', defaultValue: 1, minValue: 0.5, maxValue: 2, automationRate: 'k-rate' }];
+  }
+  constructor() {
+    super();
+    this.G = 2048;                                  // grain
+    this.N = 8192;                                  // ring buffer per channel
+    this.buf = [new Float32Array(this.N), new Float32Array(this.N)];
+    this.w = [0, 0];
+    this.D = [0, 0];                                // sweeping delay, in [0, 2G)
+  }
+  process(inputs, outputs, params) {
+    const inp = inputs[0], out = outputs[0];
+    if (!out || !out.length) return true;
+    const ratio = params.ratio.length ? params.ratio[0] : 1;
+    const n = out[0].length;
+    const G = this.G, T2 = 2 * G, N = this.N;
+    for (let c = 0; c < out.length; c++) {
+      const src = inp && (inp[c] || inp[0]) || null;
+      const b = this.buf[c] || (this.buf[c] = new Float32Array(N));
+      if (this.D[c] === undefined) { this.D[c] = 0; this.w[c] = 0; }
+      let w = this.w[c], D = this.D[c];
+      for (let s = 0; s < n; s++) {
+        b[w] = src ? src[s] : 0;
+        const d2 = (D + G) % T2;
+        const u = D / T2;
+        const g1 = Math.sin(Math.PI * u), g2 = Math.cos(Math.PI * u);
+        let r1 = w - D, r2 = w - d2;
+        r1 = ((r1 % N) + N) % N; r2 = ((r2 % N) + N) % N;
+        const i1 = Math.floor(r1), f1 = r1 - i1;
+        const i2 = Math.floor(r2), f2 = r2 - i2;
+        const s1 = b[i1] * (1 - f1) + b[(i1 + 1) % N] * f1;
+        const s2 = b[i2] * (1 - f2) + b[(i2 + 1) % N] * f2;
+        out[c][s] = s1 * g1 + s2 * g2;
+        D += (1 - ratio);
+        if (D >= T2) D -= T2; else if (D < 0) D += T2;
+        w++; if (w >= N) w = 0;
+      }
+      this.w[c] = w; this.D[c] = D;
+    }
+    return true;
+  }
+}
+registerProcessor('sb-pitch', SBPitch);
+`;
+
+/** Reverb rooms: [seconds, decay power]. Noise + one-pole lowpass — dark,
+ *  exponentially-fading tails; a hall should sound like a hall, not static. */
+const ROOMS = {
+  room: [0.35, 3.4], club: [1.1, 2.6], hall: [2.3, 2.2], stadium: [4.2, 1.8],
+};
+
+function makeIR(ctx, [secs, decay]) {
+  const sr = ctx.sampleRate, len = Math.max(1, Math.floor(sr * secs));
+  const buf = ctx.createBuffer(2, len, sr);
+  for (let c = 0; c < 2; c++) {
+    const d = buf.getChannelData(c);
+    let lp = 0;
+    for (let i = 0; i < len; i++) {
+      const e = Math.pow(1 - i / len, decay);
+      const v = (Math.random() * 2 - 1) * e;
+      lp += (v - lp) * 0.26;
+      d[i] = lp;
+    }
+  }
+  return buf;
+}
 
 /**
  * Optional EQ / analyser graph.
@@ -124,8 +213,11 @@ class Chain {
       let n = this.src;
       for (const f of this.eq) { n.connect(f); n = f; }
       n.connect(this.bass); this.bass.connect(this.treb);
-      this.treb.connect(this.comp); this.comp.connect(this.an);
+      this.compMakeup = this.ctx.createGain();       // night-mode output lift
+      this.treb.connect(this.comp);
+      this.comp.connect(this.compMakeup); this.compMakeup.connect(this.an);
       this.an.connect(this.ctx.destination);
+      this.buildLab();                               // lab stage: treb → lab → comp
       this.ready = true;
 
       /* The OS can suspend us later — a phone call, another app, the screen
@@ -161,6 +253,14 @@ class Chain {
     try { this.src?.disconnect(); } catch {}
     try { this.ctx?.close(); } catch {}
     this.ctx = this.src = this.eq = this.bass = this.treb = this.comp = this.an = null;
+    this.compMakeup = null;
+    this.labIn = this.labOut = this.pSum = this.pDry = this.pitchWetCtl = null;
+    this.pitchNode = null; this.pitchReady = false; this._pitchLoading = false;
+    this.vOut = this.vNorm = this.vKar = this.vVoc = null;
+    this.mOut = this.mNorm = this.mMono = null;
+    this.dOut = this.dDry = this.dWet = this.pan = this.lfo = this.lfoDelay = null;
+    this.rDry = this.rvWet = this.rvConv = null;
+    this._rvOn = false; this._irs = {}; this._ramp = null;
     this.el = null;
     this.ready = false;
   }
@@ -239,6 +339,199 @@ class Chain {
     let p = 0;
     for (const v of buf) p = Math.max(p, Math.abs(v - 128));
     return p;
+  }
+
+  /* ═══════════════════════════════════════════════════════ AUDIO LAB ═════
+   * Inserted between the tone filters and the compressor:
+   *
+   *   labIn → PITCH crossbar → VOICE crossbar → MONO crossbar
+   *         → 8D crossbar → REVERB wet/dry → labOut
+   *
+   * Every stage is a crossbar of parallel paths whose gains sum to 1, so a
+   * stage that is "off" is a clean wire and switching is a short ramp, not
+   * a reconnect. The convolver is the one exception — it is disconnected
+   * entirely when no room is selected, because a 4-second impulse response
+   * costs real CPU even behind a zero gain.
+   */
+  buildLab() {
+    const c = this.ctx;
+    const g = (v = 1) => { const n = c.createGain(); n.gain.value = v; return n; };
+    this._ramp = (node, v) => node.gain.setTargetAtTime(v, c.currentTime, 0.03);
+
+    this.labIn = g(); this.labOut = g();
+    this.treb.connect(this.labIn);
+    this.labOut.connect(this.comp);
+
+    /* ---- pitch: dry | worklet (wet) ---- */
+    this.pSum = g();
+    this.pDry = g(1);
+    this.labIn.connect(this.pDry); this.pDry.connect(this.pSum);
+    this.pitchNode = null; this.pitchReady = false; this._pitchLoading = false; this.pitchWetCtl = null;
+
+    /* ---- voice: normal | karaoke | vocals ----
+       Vocals sit in the centre of a stereo mix (L≈R). Karaoke keeps the
+       side signal (L−R: the instruments) plus the centred low end — bass
+       and kick live centre-low, and karaoke without bass is a punishment.
+       Vocals-only is the centre, high-passed above that same bass. */
+    this.vOut = g();
+    this.vNorm = g(1);
+    this.pSum.connect(this.vNorm); this.vNorm.connect(this.vOut);
+    const sp = c.createChannelSplitter(2);
+    this.pSum.connect(sp);
+    const gL = g(1), gRn = g(-1), side = g();
+    sp.connect(gL, 0); sp.connect(gRn, 1); gL.connect(side); gRn.connect(side);
+    const gBL = g(0.6), gBR = g(0.6);
+    const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 250; lp.Q.value = 0.7;
+    sp.connect(gBL, 0); sp.connect(gBR, 1); gBL.connect(lp); gBR.connect(lp);
+    const km = c.createChannelMerger(2);
+    this.vKar = g(0);
+    side.connect(this.vKar); lp.connect(this.vKar);
+    this.vKar.connect(km, 0, 0); this.vKar.connect(km, 0, 1);
+    const gVL = g(0.5), gVR = g(0.5);
+    const hp = c.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 250; hp.Q.value = 0.7;
+    sp.connect(gVL, 0); sp.connect(gVR, 1); gVL.connect(hp); gVR.connect(hp);
+    const vm = c.createChannelMerger(2);
+    this.vVoc = g(0);
+    hp.connect(this.vVoc);
+    this.vVoc.connect(vm, 0, 0); this.vVoc.connect(vm, 0, 1);
+    km.connect(this.vOut); vm.connect(this.vOut);
+
+    /* ---- mono ---- */
+    this.mOut = g();
+    this.mNorm = g(1);
+    this.vOut.connect(this.mNorm); this.mNorm.connect(this.mOut);
+    const msp = c.createChannelSplitter(2);
+    this.vOut.connect(msp);
+    const gML = g(0.5), gMR = g(0.5), msum = g();
+    msp.connect(gML, 0); msp.connect(gMR, 1); gML.connect(msum); gMR.connect(msum);
+    const mm = c.createChannelMerger(2);
+    this.mMono = g(0);
+    msum.connect(this.mMono);
+    this.mMono.connect(mm, 0, 0); this.mMono.connect(mm, 0, 1);
+    mm.connect(this.mOut);
+
+    /* ---- 8D: an HRTF panner orbiting the head ----
+       A sine LFO drives positionX directly; the same sine a quarter-period
+       late (a DelayNode) drives positionZ — phase quadrature traces a circle
+       with zero JavaScript in the audio loop. */
+    this.dOut = g();
+    this.dDry = g(1);
+    this.mOut.connect(this.dDry); this.dDry.connect(this.dOut);
+    this.pan = c.createPanner();
+    this.pan.panningModel = 'HRTF';
+    this.pan.distanceModel = 'inverse';
+    this.pan.refDistance = 1; this.pan.maxDistance = 10000;
+    this.pan.positionY.value = 0;
+    this.dWet = g(0);
+    this.mOut.connect(this.pan); this.pan.connect(this.dWet); this.dWet.connect(this.dOut);
+    this.lfo = c.createOscillator(); this.lfo.frequency.value = 0.12;
+    this.lfoDelay = c.createDelay(3); this.lfoDelay.delayTime.value = 1 / (4 * 0.12);
+    const gx = g(2.2), gz = g(2.2);
+    this.lfo.connect(gx); gx.connect(this.pan.positionX);
+    this.lfo.connect(this.lfoDelay); this.lfoDelay.connect(gz); gz.connect(this.pan.positionZ);
+    try { this.lfo.start(); } catch {}
+
+    /* ---- reverb: dry | convolver (wet) ---- */
+    this.rDry = g(1);
+    this.dOut.connect(this.rDry); this.rDry.connect(this.labOut);
+    this.rvConv = c.createConvolver(); this.rvConv.normalize = true;
+    this.rvWet = g(0);
+    this.rvConv.connect(this.rvWet); this.rvWet.connect(this.labOut);
+    this._rvOn = false; this._irs = {};
+  }
+
+  /** Register the pitch worklet on THIS context (worklet modules are
+   *  per-context, so a detach/attach cycle re-registers it). */
+  ensurePitch() {
+    if (this.pitchReady) return Promise.resolve(true);
+    if (!this.ctx || !this.ctx.audioWorklet) return Promise.resolve(false);
+    if (this._pitchLoading) return this._pitchLoading;
+    this._pitchLoading = new Promise((res) => {
+      const url = URL.createObjectURL(new Blob([PITCH_WORKLET], { type: 'application/javascript' }));
+      this.ctx.audioWorklet.addModule(url).then(() => {
+        URL.revokeObjectURL(url);
+        try {
+          this.pitchNode = new AudioWorkletNode(this.ctx, 'sb-pitch', { outputChannelCount: [2] });
+          this.pitchWetCtl = this.ctx.createGain();
+          this.pitchWetCtl.gain.value = 0;
+          this.labIn.connect(this.pitchNode);
+          this.pitchNode.connect(this.pitchWetCtl);
+          this.pitchWetCtl.connect(this.pSum);
+          this.pitchReady = true;
+        } catch { this.pitchReady = false; }
+        res(this.pitchReady);
+      }).catch(() => { URL.revokeObjectURL(url); res(false); });
+    });
+    return this._pitchLoading;
+  }
+
+  /** ± semitones, tempo untouched. 0 bypasses the stage entirely. */
+  setPitchSemi(st) {
+    if (!this.ready || !this._ramp) return;
+    const semis = Math.max(-6, Math.min(6, +st || 0));
+    if (!semis) {
+      this._ramp(this.pDry, 1);
+      if (this.pitchWetCtl) this._ramp(this.pitchWetCtl, 0);
+      return;
+    }
+    this.ensurePitch().then((ok) => {
+      if (!ok || !this.pitchNode || !this.pitchWetCtl) return;
+      this.pitchNode.parameters.get('ratio').value = Math.pow(2, semis / 12);
+      this._ramp(this.pDry, 0);
+      this._ramp(this.pitchWetCtl, 1);
+    });
+  }
+
+  /** normal | karaoke | vocals */
+  setVoice(mode) {
+    if (!this.ready || !this._ramp) return;
+    this._ramp(this.vNorm, mode === 'normal' ? 1 : 0);
+    this._ramp(this.vKar, mode === 'karaoke' ? 1 : 0);
+    this._ramp(this.vVoc, mode === 'vocals' ? 1 : 0);
+  }
+
+  setMono(on) {
+    if (!this.ready || !this._ramp) return;
+    this._ramp(this.mNorm, on ? 0 : 1);
+    this._ramp(this.mMono, on ? 1 : 0);
+  }
+
+  /** 8D on/off + orbits per second. */
+  set8D(on, speed = 0.12) {
+    if (!this.ready || !this._ramp) return;
+    const f = Math.max(0.03, Math.min(0.6, +speed || 0.12));
+    try {
+      this.lfo.frequency.setTargetAtTime(f, this.ctx.currentTime, 0.05);
+      this.lfoDelay.delayTime.setTargetAtTime(1 / (4 * f), this.ctx.currentTime, 0.05);
+    } catch {}
+    this._ramp(this.dDry, on ? 0 : 1);
+    this._ramp(this.dWet, on ? 1 : 0);
+  }
+
+  /** room | club | hall | stadium (anything else = off), plus wet mix. */
+  setReverb(name, wet = 0.3) {
+    if (!this.ready || !this._ramp) return;
+    const w = Math.min(0.85, Math.max(0, +wet || 0));
+    if (ROOMS[name] && w > 0.001) {
+      if (!this._irs[name]) this._irs[name] = makeIR(this.ctx, ROOMS[name]);
+      this.rvConv.buffer = this._irs[name];
+      if (!this._rvOn) { try { this.dOut.connect(this.rvConv); } catch {} this._rvOn = true; }
+      this._ramp(this.rvWet, w);
+      this._ramp(this.rDry, 1 - 0.45 * w);
+    } else {
+      this._ramp(this.rvWet, 0);
+      this._ramp(this.rDry, 1);
+      if (this._rvOn) { try { this.dOut.disconnect(this.rvConv); } catch {} this._rvOn = false; }
+    }
+  }
+
+  /** Night mode: squash the dynamics so 2 AM volume still carries every
+   *  word, with a little makeup gain to pay for it. */
+  setNight(on) {
+    if (!this.comp) return;
+    this.comp.threshold.value = on ? -50 : 0;
+    this.comp.ratio.value = on ? 20 : 1;
+    if (this.compMakeup) this.compMakeup.gain.value = on ? 1.6 : 1;
   }
 
   resume() { return this.ensureRunning(); }
@@ -379,6 +672,23 @@ async function playWithFallback(el, url, rate) {
   }
 }
 
+/** Audio Lab settings — remembered per device, re-applied whenever the
+ *  graph re-attaches (a fresh context starts every stage bypassed). */
+const LAB_DEFAULTS = {
+  mode: 'normal',        // normal | karaoke | vocals
+  pitch: 0,              // semitones, -6..+6
+  mono: false,
+  dim: false,            // 8D orbit
+  dimSpeed: 0.12,        // orbits per second
+  reverb: 'off',         // off | room | club | hall | stadium
+  wet: 0.3,
+  night: false,
+};
+const readLab = () => {
+  try { return { ...LAB_DEFAULTS, ...JSON.parse(localStorage.getItem('omni:lab') || '{}') }; }
+  catch { return { ...LAB_DEFAULTS }; }
+};
+
 export function PlayerProvider({ children }) {
   const audio = useRef(null);
   const retriedRef = useRef(null);      // last id we already re-resolved once
@@ -427,6 +737,9 @@ export function PlayerProvider({ children }) {
      rather than sitting there looking broken. */
   const [canViz, setCanViz] = useState(true);
   const [eqOn, setEqOn] = useState(false);
+  const [lab, setLabState] = useState(readLab);
+  const labRef = useRef(lab);
+  labRef.current = lab;
   const [yt, setYt] = useState(null);
   const [stage, setStage] = useState('');   // active YouTube id (IFrame mode)
 
@@ -681,7 +994,20 @@ export function PlayerProvider({ children }) {
     setLoading(false);
   }, [rate]);
 
+  /** Lock-screen seekbar needs the position pushed; it does not read it. */
+  const pushPosState = useCallback(() => {
+    try {
+      const el = audio.current;
+      const ms = navigator.mediaSession;
+      if (ms?.setPositionState && el && isFinite(el.duration) && el.duration > 0) {
+        ms.setPositionState({ duration: el.duration, playbackRate: el.playbackRate || 1,
+          position: Math.max(0, Math.min(el.currentTime, el.duration)) });
+      }
+    } catch {}
+  }, []);
+
   const toggle = useCallback(() => {
+    try { navigator.vibrate?.(8); } catch {}      // a tick the thumb can feel
     if (yt) {                       // control the IFrame player
       const f = document.getElementById('yt-frame');
       f?.contentWindow?.postMessage(JSON.stringify({ event: 'command',
@@ -860,13 +1186,14 @@ export function PlayerProvider({ children }) {
         }
       }
       setPos(clamped);
+      pushPosState();
 
       // If paused after seek, keep paused; if playing, ensure it continues
       if (playing && el.paused) {
         el.play().catch(() => {});
       }
     } catch {}
-  }, [playing]);
+  }, [playing, pushPosState]);
 
   /**
    * Silence watchdog.
@@ -940,6 +1267,17 @@ export function PlayerProvider({ children }) {
    * EQ control, it is verified, and if the context refuses to run the graph is
    * torn down and we say so rather than leaving a silent player.
    */
+  /** Apply a full lab state to the live graph. Every setter is a no-op when
+   *  the graph is not attached, so this is safe to call speculatively. */
+  const applyLab = useCallback((s) => {
+    chain.setVoice(s.mode);
+    chain.setMono(s.mono);
+    chain.set8D(s.dim, s.dimSpeed);
+    chain.setReverb(s.reverb, s.wet);
+    chain.setNight(s.night);
+    chain.setPitchSemi(s.pitch);
+  }, []);
+
   const enableEq = useCallback(async () => {
     const el = audio.current;
     if (!el || chain.ready) return chain.ready;
@@ -950,9 +1288,26 @@ export function PlayerProvider({ children }) {
       // re-apply whatever the user had set before the graph existed
       eq.forEach((g, i) => chain.band(i, g));
       chain.setBass(bass); chain.setTreb(treb); chain.setComp(comp);
+      applyLab(labRef.current);
     }
     return ok;
-  }, [eq, bass, treb, comp]);
+  }, [eq, bass, treb, comp, applyLab]);
+
+  /** Push one lab setting (or several). Persists, then routes through the
+   *  same guarded attach the EQ uses — the lab never builds its own graph. */
+  const setLab = useCallback((patch) => {
+    const s = { ...labRef.current, ...patch };
+    labRef.current = s;
+    try { localStorage.setItem('omni:lab', JSON.stringify(s)); } catch {}
+    setLabState(s);
+    enableEq().then((ok) => {
+      if (!ok) return;
+      applyLab(s);
+      /* Night mode and Loudness share the one compressor — when night is
+         switched off, hand it back to whatever Loudness was set to. */
+      if ('night' in patch && !s.night) chain.setComp(comp);
+    });
+  }, [enableEq, comp]);
 
   const applyPreset = useCallback((name) => {
     setPreset(name);
@@ -991,7 +1346,7 @@ export function PlayerProvider({ children }) {
         }));
       } catch {}
     };
-    const sid = setInterval(save, 5000);            // keep "resume from here" fresh
+    const sid = setInterval(() => { save(); pushPosState(); }, 5000);
     const onHide = () => { flush(); save(); };
     addEventListener('pagehide', onHide);
     return () => {
@@ -1023,7 +1378,7 @@ export function PlayerProvider({ children }) {
     eq, preset, bass, treb, comp, rate, sleep,
     play, toggle, step, seek, retry, extendQueue, setRadio, setShuffle, setRepeat, setFull, setMiniHidden, setSleep, applyPreset,
     playNext, addToQueue, removeAt, moveInQueue, resumeSession,
-    eqOn, enableEq,
+    eqOn, enableEq, lab, setLab,
     stop: () => {
       try { audio.current?.pause(); } catch {}
       try { if (audio.current) { audio.current.removeAttribute('src'); audio.current.load(); } } catch {}
