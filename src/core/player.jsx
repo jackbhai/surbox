@@ -7,7 +7,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { lyricsPool } from './ytmusic';
 import { resolveAudio, prefetchAudio, prefetchNext, forgetAudio, isCached, cachedAudio,
          pauseWarming, resumeWarming, rememberTrack } from './audio-resolve';
-import { bufferAhead, hasBuffered, storeUrl, rescueStalled, swapToStored, isNativeApp } from './buffered-play';
+import { playBuffered, bufferAhead, hasBuffered, storeUrl, rescueStalled, seamHold, isNativeApp } from './buffered-play';
 import { getDownload } from './downloads';
 import { resolve } from './engine';
 import { notePlay, noteListen } from './library';
@@ -699,6 +699,32 @@ async function startAudio(el, url, rate, t = {}, opts = {}) {
      skipped on purpose); the buffered store is then the only source, and
      a miss is a real failure the caller's recovery handles. */
   if (!url && !hasBuffered(t?.id)) throw new Error('No playable source');
+  /* TWO ENVIRONMENTS, TWO PROVEN PATHS.
+     The browser streams direct — instant start, and the website plays
+     perfectly that way (measured on the very phone that complained).
+     The WebView's own streaming is what cracks and stalls, so there the
+     engine takes over: fetch once, play locally — a small opening that
+     starts in a couple of seconds, a download-sized opening when the
+     pipe allows it, and in-flight re-cuts that extend the runway before
+     playback can ever reach it (see buffered-play.js). */
+  const skipBuffer = t.kind === 'station'
+    || isHls(url)
+    || /^(blob|data):/i.test(String(url || ''));
+  if (!skipBuffer && url && isNativeApp()) {
+    try {
+      const r = await playBuffered(el, url, {
+        rate,
+        key: t.id,
+        dur: +(t.dur || t.duration) || 0,
+        onStage: opts.onStage,
+      });
+      if (r) return true;              // playing a local blob: readable samples
+      /* the engine declined (pipe too slow to stay ahead) — stream direct */
+    } catch (e) {
+      if (!url) throw e;               // no url means no fallback exists
+      /* else: not bufferable after all — stream it */
+    }
+  }
   /* The buffered window is seconds long, so a newer play() may have taken
      the element while this one waited. Touching the element after that
      would overwrite the track the user actually chose — the exact bug the
@@ -936,18 +962,13 @@ export function PlayerProvider({ children }) {
            streaming is the weakest — the element is additionally handed
            the local copy the moment it lands: one early, position-
            preserving swap buys a rest-of-track that cannot stall. */
+        /* Web only — in the WebView the engine owns the byte fetch for the
+           track it is playing. */
         const curUrl = r.audio;
-        if (curUrl && !isHls(curUrl)
+        if (curUrl && !isNativeApp() && !isHls(curUrl)
             && !/^(blob|data):/i.test(curUrl) && meta.kind !== 'station'
             && !hasBuffered(t.id)) {
-          setTimeout(() => {
-            if (stale()) return;
-            bufferAhead(curUrl, t.id).then((done) => {
-              if (done && isNativeApp() && !stale()) {
-                swapToStored(audio.current, t.id, rate);
-              }
-            });
-          }, 3000);
+          setTimeout(() => { if (!stale()) bufferAhead(curUrl, t.id); }, 3000);
         }
         /* Pull the NEXT track's bytes too, so a skip lands on a blob with
            no network at all. In the WebView the single-flight lock queues
@@ -1094,18 +1115,13 @@ export function PlayerProvider({ children }) {
          from local bytes — the CDN serves parallel connections happily,
          so this never disturbs the element's own stream. In the WebView
          the element is handed the local copy the moment it lands. */
+      /* Web only — in the WebView the engine owns the byte fetch for the
+         track it is playing. */
       const curUrl = t.stream || t.url || t.preview || '';
-      if (curUrl && t.id && !isHls(curUrl)
+      if (curUrl && t.id && !isNativeApp() && !isHls(curUrl)
           && !/^(blob|data):/i.test(curUrl) && t.kind !== 'station'
           && !hasBuffered(t.id)) {
-        setTimeout(() => {
-          if (stale()) return;
-          bufferAhead(curUrl, t.id).then((done) => {
-            if (done && isNativeApp() && !stale()) {
-              swapToStored(audio.current, t.id, rate);
-            }
-          });
-        }, 3000);
+        setTimeout(() => { if (!stale()) bufferAhead(curUrl, t.id); }, 3000);
       }
       /* The NEXT track's bytes too, so a skip lands on a local blob with
          no network at all. Direct rows carry their own URL, so the pull
@@ -1624,6 +1640,10 @@ export function PlayerProvider({ children }) {
 
           // Nothing we load ourselves should be treated as a stream failure.
           if (el && (el.src || '').startsWith('data:')) return;
+          /* The engine may be holding playback at a seam of its own — that
+             is buffering, not a dead stream, and this recovery must not
+             fight it. */
+          if (seamHold()) return;
           /* The stream died but the bytes of THIS track are already local
              (background prefetch) — switch to them at this position and
              keep playing. Instant, offline, no resolver round-trip; when
