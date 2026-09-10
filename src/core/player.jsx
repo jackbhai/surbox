@@ -7,8 +7,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { lyricsPool } from './ytmusic';
 import { resolveAudio, prefetchAudio, prefetchNext, forgetAudio, isCached, cachedAudio,
          pauseWarming, resumeWarming, rememberTrack } from './audio-resolve';
-import { playBuffered, bufferAhead, hasBuffered, closeBuffered, seamHold,
-         storeUrl, rescueStalled, isNativeApp } from './buffered-play';
+import { bufferAhead, hasBuffered, storeUrl, rescueStalled, swapToStored, isNativeApp } from './buffered-play';
 import { getDownload } from './downloads';
 import { resolve } from './engine';
 import { notePlay, noteListen } from './library';
@@ -680,58 +679,34 @@ async function playWithFallback(el, url, rate) {
 }
 
 /**
- * Point the element at a track URL.
+ * Point the element at a track URL — direct and instant, everywhere.
  *
- * TWO ENVIRONMENTS, TWO PROVEN PATHS
- * In a plain browser, direct streaming is what omnitools has always done:
- * it starts instantly and the browser's stream pacing carries the song —
- * so that is exactly what happens here. Only inside the Capacitor WebView,
- * whose own media buffering is the weakest of any Chromium and where a
- * mid-song stall cannot be resumed (see buffered-play.js), are the bytes
- * fetched and played locally.
+ * This is omnitools' proven path, unchanged: the element streams from the
+ * CDN and starts in well under a second. The byte store plays two quiet
+ * roles around it (see buffered-play.js): a track whose bytes are already
+ * local starts from the blob instead — instant, offline, immune to
+ * expiring links — and the caller pulls the current track's bytes into
+ * the store in the background so replays are instant, a dead stream can
+ * be rescued from local bytes at the same position, and (in the WebView,
+ * whose streaming is weakest) the element is handed the local copy as
+ * soon as it lands.
  *
- * Either way, a track whose bytes are already local (a download, or one
- * the background prefetch finished) starts from them instantly — no
- * network, no resolver, immune to expiring links.
- *
- * Returns whether script can read the samples (the visualiser's question):
- * always true for a local blob, and whatever the direct path reports
- * otherwise.
+ * Returns whether script can read the samples (the visualiser's and the
+ * equaliser's question).
  */
 async function startAudio(el, url, rate, t = {}, opts = {}) {
   /* An empty url means the bytes are already local (the resolver was
      skipped on purpose); the buffered store is then the only source, and
      a miss is a real failure the caller's recovery handles. */
   if (!url && !hasBuffered(t?.id)) throw new Error('No playable source');
-  const skipBuffer = t.kind === 'station'
-    || isHls(url)
-    || /^(blob|data):/i.test(String(url || ''));
-  if (!skipBuffer && url && isNativeApp()) {
-    try {
-      const r = await playBuffered(el, url, {
-        rate,
-        key: t.id,
-        dur: +(t.dur || t.duration) || 0,
-        onStage: opts.onStage,
-        onFull: opts.onFull,
-      });
-      if (r) return true;              // playing a local blob: readable samples
-      /* the engine declined (pipe too slow to stay ahead) — stream direct */
-    } catch (e) {
-      if (!url) throw e;               // no url means no fallback exists
-      /* else: not bufferable after all — stream it */
-    }
-  }
   /* The buffered window is seconds long, so a newer play() may have taken
      the element while this one waited. Touching the element after that
      would overwrite the track the user actually chose — the exact bug the
      play tokens exist to prevent — so the caller's staleness check is
-     honoured before any fallback touches the element. */
+     honoured before anything touches the element. */
   if (opts.stale?.()) return true;     // abandoned: the newer play owns the element
-  /* A stored copy plays straight from the local blob — this is the
-     browser path for a prefetched/replayed track (in the WebView the
-     engine above already handled it). */
-  const target = url || storeUrl(t.id);
+  /* A stored copy beats any URL — the bytes never expire. */
+  const target = (url && hasBuffered(t.id) ? storeUrl(t.id) : url) || storeUrl(t.id);
   return playWithFallback(el, target, rate);
 }
 
@@ -930,10 +905,7 @@ export function PlayerProvider({ children }) {
         // this BEFORE assigning src is what stops the "Stream failed" flash.
         if (cached) { recoveringRef.current = true; retriedRef.current = t.id; }
         setStage('Buffering…');
-        const analysable = await startAudio(el, r.audio, rate, meta, {
-          onStage: setStage,
-          stale,
-        });
+        const analysable = await startAudio(el, r.audio, rate, meta, { stale });
         if (stale()) return;
         setCanViz(analysable);
         recoveringRef.current = false;
@@ -956,17 +928,26 @@ export function PlayerProvider({ children }) {
           const i = list.findIndex((x) => (x.id ?? x.url) === (t.id ?? t.url));
           if (i >= 0) prefetchNext(list, i, 4);
         }
-        /* The CURRENT track's bytes, pulled quietly in the browser so a
-           replay or a Prev is instant and a dead stream can be rescued
+        /* The CURRENT track's bytes, pulled quietly into the local store so
+           a replay or a Prev is instant and a dead stream can be rescued
            from local bytes. The CDN serves parallel connections happily
            (measured: three simultaneous ranges, all 206), so this never
-           disturbs the element's own stream. In the WebView the engine
-           already holds the bytes, so this is web-only. */
+           disturbs the element's own stream. In the WebView — whose own
+           streaming is the weakest — the element is additionally handed
+           the local copy the moment it lands: one early, position-
+           preserving swap buys a rest-of-track that cannot stall. */
         const curUrl = r.audio;
-        if (curUrl && !isNativeApp() && !isHls(curUrl)
+        if (curUrl && !isHls(curUrl)
             && !/^(blob|data):/i.test(curUrl) && meta.kind !== 'station'
             && !hasBuffered(t.id)) {
-          setTimeout(() => { if (!stale()) bufferAhead(curUrl, t.id); }, 3000);
+          setTimeout(() => {
+            if (stale()) return;
+            bufferAhead(curUrl, t.id).then((done) => {
+              if (done && isNativeApp() && !stale()) {
+                swapToStored(audio.current, t.id, rate);
+              }
+            });
+          }, 3000);
         }
         /* Pull the NEXT track's bytes too, so a skip lands on a blob with
            no network at all. In the WebView the single-flight lock queues
@@ -1022,7 +1003,7 @@ export function PlayerProvider({ children }) {
           setErr(''); setStage('Link expired — refreshing…');
           try {
             const r = await resolveAudio(t.id, { fresh: true, onProgress: setStage });
-            setCanViz(await startAudio(el, r.audio, rate, t, { onStage: setStage, stale }));
+            setCanViz(await startAudio(el, r.audio, rate, t, { stale }));
             if (stale()) return;
             setPlaying(true); setStage(''); setLoading(false); setErr('');
             resumeWarming();
@@ -1107,17 +1088,24 @@ export function PlayerProvider({ children }) {
          need one — direct rows carry theirs already), then their bytes
          below. Same treatment the resolving path gives its list. */
       if (list) prefetchNext(list, list.findIndex((x) => (x.id ?? x.url) === (t.id ?? t.url)), 4);
-      /* The same quiet byte-pulls the resolving path does. The CURRENT
-         track's bytes land in the local store a few seconds in (web only;
-         in the WebView the buffered engine already holds them), so a
+      /* The same quiet byte-pull the resolving path does: the CURRENT
+         track's bytes land in the local store a few seconds in, so a
          replay or a Prev is instant and a dead stream can be rescued
          from local bytes — the CDN serves parallel connections happily,
-         so this never disturbs the element's own stream. */
+         so this never disturbs the element's own stream. In the WebView
+         the element is handed the local copy the moment it lands. */
       const curUrl = t.stream || t.url || t.preview || '';
-      if (curUrl && t.id && !isNativeApp() && !isHls(curUrl)
+      if (curUrl && t.id && !isHls(curUrl)
           && !/^(blob|data):/i.test(curUrl) && t.kind !== 'station'
           && !hasBuffered(t.id)) {
-        setTimeout(() => { if (!stale()) bufferAhead(curUrl, t.id); }, 3000);
+        setTimeout(() => {
+          if (stale()) return;
+          bufferAhead(curUrl, t.id).then((done) => {
+            if (done && isNativeApp() && !stale()) {
+              swapToStored(audio.current, t.id, rate);
+            }
+          });
+        }, 3000);
       }
       /* The NEXT track's bytes too, so a skip lands on a local blob with
          no network at all. Direct rows carry their own URL, so the pull
@@ -1518,7 +1506,7 @@ export function PlayerProvider({ children }) {
   const lastTickRef = useRef(0);
   /* REACTIVE RESCUE — a direct stream that stalls mid-song is the one
      failure the browser cannot cure itself (the CDN refuses resumes), so
-     after a couple of seconds of genuine silence the local store gets a
+     after a second and a half of genuine silence the local store gets a
      chance to take over before any heavier recovery runs. A healthy
      stream never sees this: 'waiting' fires, 'playing' follows within
      the window, the timer is cleared and nothing is touched. */
@@ -1573,8 +1561,8 @@ export function PlayerProvider({ children }) {
     play, toggle, step, seek, retry, extendQueue, setRadio, setShuffle, setRepeat, setFull, setMiniHidden, setSleep, applyPreset,
     playNext, addToQueue, removeAt, moveInQueue, resumeSession,
     eqOn, enableEq, lab, setLab,
+    offEq: () => { try { chain.detachAll(); } catch {} setEqOn(false); },
     stop: () => {
-      closeBuffered();               // abort any in-flight byte fetch, free the pipe
       try { audio.current?.pause(); } catch {}
       try { if (audio.current) { audio.current.removeAttribute('src'); audio.current.load(); } } catch {}
       setPlaying(false); setTrack(null); setFull(false); setMiniHidden(false); setQueue([]); setIdx(-1);
@@ -1623,7 +1611,7 @@ export function PlayerProvider({ children }) {
                up at this exact position; otherwise nothing happens here and
                the element rides the stall out as it always did */
             rescueStalled(audio.current, track.id, rate);
-          }, 2500);
+          }, 1500);
         }}
         onPlaying={() => { if (stallRef.current) { clearTimeout(stallRef.current); stallRef.current = null; } }}
         onError={() => {
@@ -1636,11 +1624,6 @@ export function PlayerProvider({ children }) {
 
           // Nothing we load ourselves should be treated as a stream failure.
           if (el && (el.src || '').startsWith('data:')) return;
-          /* A truncated opening chunk ends as a decode error, and the
-             buffered session holds at that seam on its own — that is
-             buffering, not a dead stream, and the recovery here must not
-             fight it. */
-          if (seamHold()) return;
           /* The stream died but the bytes of THIS track are already local
              (background prefetch) — switch to them at this position and
              keep playing. Instant, offline, no resolver round-trip; when

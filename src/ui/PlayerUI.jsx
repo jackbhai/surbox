@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { usePlayer, chain } from '../core/player';
+import { usePlayer, chain, PRESETS } from '../core/player';
 import { isFav, toggleFav } from '../core/library';
 import { downloadTrack, removeDownload, isDownloaded, isDownloading, onDownloads } from '../core/downloads';
 import { resolveAudio } from '../core/audio-resolve';
@@ -470,22 +470,7 @@ export function FullPlayer() {
           </div>
           </div>)}
 
-        {tab === 'eq' && (
-          <div>
-            <label className="dim sm">Speed {p.rate}×</label>
-            <input type="range" min="0.5" max="2" step="0.05" value={p.rate}
-              onChange={(e) => p.setRateV(+e.target.value)} />
-            <div className="btnrow">
-              <button className="cat" onClick={() => p.setRateV(1)}>
-                <Icon n="refresh" size={13} /> Normal speed</button>
-            </div>
-            <div className="note" style={{ marginTop: 14 }}>
-              The equaliser was removed on purpose. The servers behind these
-              streams do not grant the audio access a real equaliser needs,
-              and the workaround that forced it made playback heavier —
-              songs buffered and stuttered. Smooth playback always wins.
-            </div>
-          </div>)}
+        {tab === 'eq' && <EqPanel p={p} />}
 
         {tab === 'queue' && (
           <div className="list">
@@ -678,4 +663,160 @@ export function FullPlayer() {
         {dlErr && <div className="err" style={{ marginTop: 8 }}><p>{dlErr}</p></div>}
       </div>
     </div>);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   EQUALISER + AUDIO LAB
+   The graph this panel drives lives in player.jsx (the Chain class): ten
+   biquad bands, bass/treble shelves, a compressor, a zero-dependency pitch
+   shifter and the voice stage. It attaches only when the user switches it
+   on here — never by itself — and it is verified to keep audio flowing
+   before it promises anything.
+
+   WHY IT WORKS IN THE APP (and frustrated everyone on the website)
+   An equaliser needs to READ the samples, and a cross-origin stream that
+   does not grant CORS access produces a MUTED MediaElementSource: bars
+   move, sound dies. In the app every track plays from a LOCAL blob —
+   same-origin by definition — so the samples are always readable and the
+   graph always has something real to work on. Website visitors get it on
+   buffered tracks and CORS-friendly streams; `eqCapable` says which.
+
+   THE VOICE STAGE (sound alag, vocals alag)
+   'Karaoke' cancels the centred channel — vocals sit in the middle of
+   nearly every stereo mix, so L−R removes them and leaves the music.
+   'Vocals' does the opposite and keeps only the centre. It is the honest
+   real-time trick, not AI stem separation: expect a great karaoke track
+   on standard mixes, with some bleed on songs hard-panned either side.
+   ═══════════════════════════════════════════════════════════════════════════ */
+function EqPanel({ p }) {
+  if (!p) return null;
+  const lab = p.lab || {};
+  const capable = p.eqCapable || p.eqOn;   // once attached, keep the controls live
+  const disabled = !capable;
+
+  const Row = ({ label, value, min, max, step, onChange, fmt }) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '7px 0' }}>
+      <span className="dim sm" style={{ flex: '0 0 58px', fontVariantNumeric: 'tabular-nums' }}>{label}</span>
+      <input type="range" min={min} max={max} step={step} value={value} disabled={disabled}
+        onChange={(e) => onChange(+e.target.value)}
+        style={{ flex: 1, opacity: disabled ? 0.35 : 1 }} />
+      <span className="mono sm" style={{ flex: '0 0 40px', textAlign: 'right' }}>
+        {fmt ? fmt(value) : value}</span>
+    </div>
+  );
+
+  const Chips = ({ options, value, onPick, disabled: dis }) => (
+    <div className="btnrow" style={{ flexWrap: 'wrap', gap: 6 }}>
+      {options.map(([v, l]) => (
+        <button key={v} className={`cat ${value === v ? 'on' : ''}`} disabled={dis}
+          style={{ opacity: dis ? 0.35 : 1 }} onClick={() => onPick(v)}>{l}</button>))}
+    </div>
+  );
+
+  return (
+    <div>
+      {/* ---- master switch ---- */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <div>
+          <b style={{ fontSize: 14 }}>Equaliser &amp; Audio Lab</b>
+          <div className="dim sm">{p.eqOn ? 'On — processing this track' : 'Off — tap to enable'}</div>
+        </div>
+        <button className={`cat ${p.eqOn ? 'on' : ''}`} onClick={() => (p.eqOn ? p.offEq() : p.enableEq())}>
+          <Icon n="sliders" size={13} /> {p.eqOn ? 'ON' : 'OFF'}
+        </button>
+      </div>
+
+      {!capable && (
+        <div className="note" style={{ marginBottom: 10 }}>
+          This track does not grant audio access (a server that refuses to
+          share its samples). It will work on buffered and downloaded tracks —
+          and on every track in the app, which plays from a local copy.
+        </div>
+      )}
+
+      {/* ---- presets ---- */}
+      <label className="dim sm">Preset</label>
+      <Chips options={Object.keys(PRESETS).map((k) => [k, k])} value={p.preset}
+        onPick={(k) => p.applyPreset(k)} disabled={disabled} />
+
+      {/* ---- the ten bands ---- */}
+      <div style={{ marginTop: 12 }}>
+        <label className="dim sm">Bands (dB)</label>
+        {p.BANDS.map((f, i) => (
+          <Row key={f} label={f >= 1000 ? `${f / 1000}k` : `${f}`}
+            value={p.eq[i] ?? 0} min={-12} max={12} step={1}
+            onChange={(v) => p.setEqBand(i, v)}
+            fmt={(v) => (v > 0 ? `+${v}` : `${v}`)} />
+        ))}
+      </div>
+
+      {/* ---- tone ---- */}
+      <div style={{ marginTop: 10 }}>
+        <label className="dim sm">Tone</label>
+        <Row label="Bass" value={p.bass} min={-12} max={12} step={1}
+          onChange={p.setBassV} fmt={(v) => (v > 0 ? `+${v}` : `${v}`)} />
+        <Row label="Treble" value={p.treb} min={-12} max={12} step={1}
+          onChange={p.setTrebV} fmt={(v) => (v > 0 ? `+${v}` : `${v}`)} />
+      </div>
+
+      {/* ---- voice stage: the sound-alag / vocals-alag switch ---- */}
+      <div style={{ marginTop: 14 }}>
+        <label className="dim sm">Voice — karaoke &amp; vocal isolation</label>
+        <Chips options={[['normal', 'Normal'], ['karaoke', 'Karaoke (music only)'], ['vocals', 'Vocals only']]}
+          value={lab.mode || 'normal'} onPick={(m) => p.setLab({ mode: m })} disabled={disabled} />
+        <div className="dim sm" style={{ marginTop: 4 }}>
+          Karaoke removes centred vocals from the mix; Vocals keeps only the
+          centre. Works best on standard stereo mixes.
+        </div>
+      </div>
+
+      {/* ---- pitch ---- */}
+      <div style={{ marginTop: 12 }}>
+        <label className="dim sm">Pitch (semitones)</label>
+        <Row label="Key" value={lab.pitch || 0} min={-6} max={6} step={1}
+          onChange={(v) => p.setLab({ pitch: v })}
+          fmt={(v) => (v > 0 ? `+${v}` : `${v}`)} />
+      </div>
+
+      {/* ---- space ---- */}
+      <div style={{ marginTop: 12 }}>
+        <label className="dim sm">Space</label>
+        <Chips options={[['off', 'Dry'], ['room', 'Room'], ['club', 'Club'], ['hall', 'Hall'], ['stadium', 'Stadium']]}
+          value={lab.reverb || 'off'} onPick={(r) => p.setLab({ reverb: r })} disabled={disabled} />
+        {(lab.reverb && lab.reverb !== 'off') && (
+          <Row label="Wet" value={Math.round((lab.wet ?? 0.3) * 100)} min={0} max={100} step={5}
+            onChange={(v) => p.setLab({ wet: v / 100 })} fmt={(v) => `${v}%`} />
+        )}
+        <div className="btnrow" style={{ flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+          <button className={`cat ${lab.dim ? 'on' : ''}`} disabled={disabled}
+            style={{ opacity: disabled ? 0.35 : 1 }}
+            onClick={() => p.setLab({ dim: !lab.dim })}>8D orbit</button>
+          <button className={`cat ${lab.mono ? 'on' : ''}`} disabled={disabled}
+            style={{ opacity: disabled ? 0.35 : 1 }}
+            onClick={() => p.setLab({ mono: !lab.mono })}>Mono</button>
+          <button className={`cat ${lab.night ? 'on' : ''}`} disabled={disabled}
+            style={{ opacity: disabled ? 0.35 : 1 }}
+            onClick={() => p.setLab({ night: !lab.night })}>Night mode</button>
+        </div>
+      </div>
+
+      {/* ---- speed ---- */}
+      <div style={{ marginTop: 14 }}>
+        <label className="dim sm">Speed</label>
+        <Row label="Rate" value={p.rate} min={0.5} max={2} step={0.05}
+          onChange={p.setRateV} fmt={(v) => `${v}×`} />
+        <div className="btnrow">
+          <button className="cat" onClick={() => p.setRateV(1)}>
+            <Icon n="refresh" size={13} /> Normal speed</button>
+        </div>
+      </div>
+
+      <div className="note" style={{ marginTop: 14 }}>
+        The equaliser runs on this device, in real time, and never changes the
+        stored file — original quality is one tap away (OFF). On very old
+        phones heavy settings can cost some battery; playback smoothness
+        always comes first, so the graph attaches only when you ask for it.
+      </div>
+    </div>
+  );
 }
