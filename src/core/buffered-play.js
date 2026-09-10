@@ -128,7 +128,7 @@ function acquire(kind) {
  * track's own bitrate, clamped so a small file simply completes (no seam
  * at all) and a huge one does not wait forever. Without a known duration,
  * 320 kbps is assumed — the catalogue's default quality. */
-const OPEN_SECONDS = 45;
+const OPEN_SECONDS = 20;
 function openThreshold(total, durSec) {
   const bps = total && durSec ? total / durSec : 40 * 1024;
   let t = Math.round(OPEN_SECONDS * bps);
@@ -140,10 +140,10 @@ function openThreshold(total, durSec) {
 
 /* If the rest of the file is this close, waiting for the whole thing beats
  * playing a partial and swapping (no seam at all). */
-const HOLD_FULL_MS = 10000;
+const HOLD_FULL_MS = 6000;
 /* If the rest is this far away, the buffered path cannot keep ahead of
  * playback and direct streaming will do a better job. */
-const GIVE_UP_MS = 45000;
+const GIVE_UP_MS = 60000;
 
 /* ------------------------------------------------------------- the fetch
  * Read a URL to a complete Blob. `onOpen(blob, have, total, etaMs)` fires
@@ -219,6 +219,49 @@ async function fetchToBlob(url, { key, durSec, noOpen = false, signal, onOpen, o
   const { url: fullUrl } = keepBlob(key, full);
   onFull?.(fullUrl, full.size, total);
   return full;
+}
+
+/** The stored object URL for a key, if the bytes are local. */
+export const storeUrl = (key) => (key ? STORE.get(key)?.url : null) || null;
+
+/** True inside the Capacitor Android/iOS shell — the environment whose
+ *  media stack streams worst (see the file header) and needs the buffered
+ *  path; a plain browser plays direct, exactly like omnitools. */
+export const isNativeApp = () => {
+  try {
+    const c = window.Capacitor;
+    return !!(c && (c.isNativePlatform?.() || c.Plugins?.App));
+  } catch { return false; }
+};
+
+/**
+ * REACTIVE rescue: the live stream just stalled or died mid-song, and the
+ * bytes of THIS track are already local (prefetched for the next skip, or
+ * buffered earlier). Point the element at the local copy at the same
+ * position and keep going — instant, offline, no resolver round-trip.
+ *
+ * This is the only time a healthy stream is ever swapped away: never
+ * proactively, never mid-play for tidiness — only when the alternative is
+ * a dead player. Returns false when there is nothing local to rescue with
+ * (the caller's ordinary recovery then runs, as it always did).
+ */
+export function rescueStalled(el, key, rate = 1) {
+  if (!el || !key) return false;
+  const hit = STORE.get(key);
+  if (!hit) return false;
+  const cur = el.currentSrc || el.src || '';
+  if (!cur || cur === hit.url) return false;     // nothing to rescue from
+  if (/\.m3u8(\?|$)/i.test(String(cur))) return false;
+  const at = el.currentTime || 0;
+  try { el.pause(); } catch {}
+  try {
+    el.removeAttribute('crossorigin');
+    el.src = hit.url;
+    el.playbackRate = rate; el.preservesPitch = true;
+    el.currentTime = at;
+    el.play().catch(() => {});
+    return true;
+  } catch { return false; }
 }
 
 /* ------------------------------------------------------------- sessions */
@@ -443,7 +486,7 @@ export async function playBuffered(el, url, { rate = 1, key, dur, onStage, onFul
            could get through the opening chunk — wait for it; one local
            file, no seam, nothing to swap. */
         if (etaMs != null && etaMs <= HOLD_FULL_MS) {
-          stage(total ? `Buffering… ${Math.min(100, Math.round((have / total) * 100))}%` : 'Buffering…');
+          stage('Buffering…');
           return;                       // no partial; onFull plays the file
         }
         partialUrl = URL.createObjectURL(blob);
@@ -473,11 +516,9 @@ export async function playBuffered(el, url, { rate = 1, key, dur, onStage, onFul
           ses.close();
         });
       },
-      onProgress: (have, total) => {
+      onProgress: () => {
         if (done) return;
         armIdle();
-        if (total) stage(`Buffering… ${Math.min(100, Math.round((have / total) * 100))}%`);
-        else stage('Buffering…');
       },
       onFull: (u, size, total) => {
         if (ses.closed) return;
