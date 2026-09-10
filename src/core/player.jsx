@@ -629,7 +629,19 @@ async function attach(el, url, { cors = true } = {}) {
   if (el.canPlayType('application/vnd.apple.mpegurl')) { el.src = url; return; }
   const Hls = await loadHlsLib();
   if (!Hls.isSupported()) throw new Error('this browser cannot play that stream');
-  const h = new Hls({ enableWorker: true, lowLatencyMode: false });
+  /* Live radio over HLS: trade a little latency for a deep cushion — the
+     WebView's media pipeline hiccups far more than a browser's, and a
+     minute of forward buffer absorbs the network's worst moments without
+     the listener ever hearing them. Staying three segments behind the
+     live edge (instead of chasing it) is what makes that cushion legal. */
+  const h = new Hls({
+    enableWorker: true,
+    lowLatencyMode: false,
+    maxBufferLength: 60,           // forward buffer target, seconds
+    maxMaxBufferLength: 90,
+    backBufferLength: 30,
+    liveSyncDurationCount: 3,
+  });
   el._hls = h;
   await new Promise((res, rej) => {
     const done = (fn) => { clearTimeout(timer); fn(); };
