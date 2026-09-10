@@ -45,12 +45,12 @@ export default function Onboarding({ onDone }) {
   if (step === -1) return (
     <div className="onb">
       <div className="onb-top">
-        <span className="sb-brand" style={{ fontSize: 22 }}>SUR</span>
+        <span className="sb-brand" style={{ fontSize: 22 }}>Sur<b>बॉक्स</b></span>
         <button className="onb-skip" onClick={skip}>Skip for now</button>
       </div>
       <div className="welcome">
         <div className="mark"><Icon n="music" size={46} /></div>
-        <h1>SUR<br />BOX</h1>
+        <h1 className="wm">Sur<br /><b>बॉक्स</b></h1>
         <p className="tag">Ad-free music that knows you. Thirty seconds of picking, a home screen that is yours forever.</p>
         <div className="steps">
           <div><span className="n">ਅ</span> Languages</div>
@@ -69,7 +69,7 @@ export default function Onboarding({ onDone }) {
   if (step >= STEPS.length) return (
     <div className="onb">
       <div className="onb-top">
-        <span className="sb-brand" style={{ fontSize: 22 }}>SUR</span>
+        <span className="sb-brand" style={{ fontSize: 22 }}>Sur<b>बॉक्स</b></span>
       </div>
       <div className="welcome" style={{ animationDelay: '.05s' }}>
         <div className="mark" style={{ width: 88, height: 88 }}>

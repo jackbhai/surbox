@@ -97,7 +97,11 @@ function Shell() {
   return (
     <div className={`app sb-shell ${p?.track ? 'has-now' : ''}`}>
       <header className="sb-top">
-        <span className="sb-brand">SUR</span>
+        {/* The wordmark reads as one name in two scripts: "Sur" (English,
+            the musical note) in green + "बॉक्स" (box, Hindi) in cyan — so the
+            brand can never be misread as the word the old all-caps "SUR"
+            accidentally spelled. Yatra One paints both scripts natively. */}
+        <span className="sb-brand" title="SurBox">Sur<b>बॉक्स</b></span>
         <span className="sp" />
         <button className="iconbtn" aria-label="Keyboard shortcuts"
           title="Space play/pause · ←/→ seek · N/P track · M mute · F player · S shuffle · R repeat"

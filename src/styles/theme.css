@@ -1001,8 +1001,13 @@ input[type="color"] {
   padding:calc(10px + env(safe-area-inset-top)) 18px 10px;max-width:720px;margin:0 auto;width:100%;
   background:linear-gradient(180deg, rgba(0,0,0,.88), rgba(0,0,0,.72) 70%, transparent);
   backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
-.sb-brand{font-family:var(--font-display);font-size:30px;letter-spacing:1.5px;line-height:1;
-  background:linear-gradient(100deg,var(--green),var(--cyan));-webkit-background-clip:text;background-clip:text;color:transparent}
+/* Wordmark: one name, two scripts, two neons — Yatra One's brush strokes
+   carry both Latin and Devanagari natively, so "Sur" + "बॉक्स" sit on the
+   same painted baseline. Each half glows in its own colour. */
+.sb-brand{font-family:'Yatra One',var(--font-display);font-size:27px;line-height:1.35;
+  letter-spacing:.5px;color:var(--green);text-shadow:0 0 16px color-mix(in srgb,var(--green) 40%,transparent)}
+.sb-brand b{font-weight:400;color:var(--cyan);
+  text-shadow:0 0 16px color-mix(in srgb,var(--cyan) 40%,transparent)}
 .sb-top .sp{flex:1}
 
 /* ---------- floating glass dock ---------- */
@@ -1204,6 +1209,12 @@ input[type="color"] {
   border:1px solid rgba(0,255,156,.25);box-shadow:0 0 60px rgba(0,255,156,.18);animation:sb-glow 3.2s ease-in-out infinite}
 .welcome h1{font-family:var(--font-display);font-size:66px;line-height:.95;letter-spacing:2.5px;margin:0 0 14px;
   background:linear-gradient(100deg,var(--green),var(--cyan));-webkit-background-clip:text;background-clip:text;color:transparent}
+/* the painted wordmark variant — two scripts, one brush, two neons */
+.welcome h1.wm{font-family:'Yatra One',var(--font-display);letter-spacing:1px;line-height:1.04;
+  background:none;-webkit-background-clip:initial;background-clip:initial;color:var(--green);
+  text-shadow:0 0 26px color-mix(in srgb,var(--green) 35%,transparent)}
+.welcome h1.wm b{font-weight:400;color:var(--cyan);
+  text-shadow:0 0 26px color-mix(in srgb,var(--cyan) 35%,transparent)}
 .welcome .tag{color:var(--fg2);font-size:14.5px;line-height:1.6;margin:0 0 34px;max-width:300px}
 .welcome .steps{display:flex;gap:26px;margin-bottom:38px}
 .welcome .steps div{display:flex;flex-direction:column;align-items:center;gap:7px;color:var(--fg3);font-size:10.5px;
