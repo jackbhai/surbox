@@ -16,15 +16,17 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "@capacitor/android": "^8.5.1",
-    "@capacitor/app": "^8.1.1",
-    "@capacitor/cli": "^7.6.9",
-    "@capacitor/core": "^8.5.1",
-    "@capacitor/splash-screen": "^8.0.2",
-    "@capacitor/status-bar": "^8.0.3",
     "@vitejs/plugin-react": "^6.1.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "vite": "^8.2.2"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^7.6.9",
+    "@capacitor/app": "^7.1.2",
+    "@capacitor/cli": "^7.6.9",
+    "@capacitor/core": "^7.6.9",
+    "@capacitor/splash-screen": "^7.0.5",
+    "@capacitor/status-bar": "^7.0.6"
   }
 }

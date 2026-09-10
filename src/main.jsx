@@ -5,6 +5,22 @@ import './styles/theme.css';
 import { initTheme } from './core/theme.js';
 import { initPWA } from './core/pwa.js';
 import { ErrorBoundary } from './ErrorBoundary';
+import { Capacitor } from '@capacitor/core';
+import { StatusBar, Style } from '@capacitor/status-bar';
+import { SplashScreen } from '@capacitor/splash-screen';
+
+/* Inside the Android shell the web has no say over the OS chrome, so the
+   native plugins paint the status bar to match the app (true black, light
+   icons) and dismiss the launch splash once the app is up. On the website
+   Capacitor reports "web" and every call here is an inert no-op. */
+if (Capacitor.isNativePlatform()) {
+  try {
+    StatusBar.setStyle({ style: Style.Dark });
+    StatusBar.setBackgroundColor({ color: '#000000' });
+    StatusBar.setOverlaysWebView({ overlay: false });
+    SplashScreen.hide({ fadeDuration: 250 });
+  } catch {}
+}
 
 // Init theme before render - apply saved theme immediately to avoid flash
 initTheme();

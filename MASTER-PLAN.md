@@ -215,3 +215,12 @@ Real vocal/instrumental separation, in-browser:
 
 *Last updated: v2 UI build — onboarding, dock shell, glass NowBar, premium
 Home/Search/Library shipped.*
+
+## P6 — Android APK wrapper (v2.4.1) — DONE
+Capacitor 7 shell around the same web bundle: `android/` project in-repo,
+release-signed APK (see `BUILD-ANDROID.md`), adaptive icon + splash from the
+theme DNA (neon green/cyan waveform on true black), black status bar via the
+native status-bar plugin, VIBRATE permission for the lab's haptic ticks.
+Background playback continues (keepRunning); lock-screen controls need a
+future native MediaSession service — tracked as a P7 candidate, not claimed
+anywhere in the UI.

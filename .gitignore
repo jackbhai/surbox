@@ -20,3 +20,4 @@ android/app/src/main/assets/public/
 __pycache__/
 *.pyc
 .ssr-smoke
+android/keystore.properties

@@ -1,26 +1,16 @@
 {
-  "appId": "com.surbox.app",
+  "appId": "com.jackbhai.surbox",
   "appName": "SurBox",
   "webDir": "dist",
-  "server": {
-    "androidScheme": "https"
+  "android": {
+    "backgroundColor": "#000000",
+    "keepRunning": true
   },
   "plugins": {
     "SplashScreen": {
-      "launchAutoHide": true,
       "backgroundColor": "#000000",
-      "androidSplashResourceName": "splash",
       "androidScaleType": "CENTER_CROP",
       "showSpinner": false
-    },
-    "StatusBar": {
-      "style": "DARK",
-      "backgroundColor": "#000000"
     }
-  },
-  "android": {
-    "allowMixedContent": true,
-    "captureInput": true,
-    "webContentsDebuggingEnabled": false
   }
 }
