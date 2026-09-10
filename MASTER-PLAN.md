@@ -216,6 +216,14 @@ Real vocal/instrumental separation, in-browser:
 *Last updated: v2 UI build — onboarding, dock shell, glass NowBar, premium
 Home/Search/Library shipped.*
 
+## P1 — Audio Lab / EQ — ROLLED BACK (v2.4.3, user decision)
+Removed from the product. The CDNs behind the catalogue stopped sending
+`Access-Control-Allow-Origin` on audio, so a genuine Web-Audio equaliser
+cannot run on streamed tracks; the relay workaround (piping audio through
+omni-proxy) worked but made playback heavier — buffering and stutter.
+Smooth playback wins over any effect. The Audio tab now offers Speed only.
+The dormant DSP code stays in player.jsx but nothing reaches it.
+
 ## P6 — Android APK wrapper (v2.4.1) — DONE
 Capacitor 7 shell around the same web bundle: `android/` project in-repo,
 release-signed APK (see `BUILD-ANDROID.md`), adaptive icon + splash from the
