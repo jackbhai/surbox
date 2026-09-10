@@ -136,7 +136,9 @@ function EqTab() {
   const [cps, setCps] = useState(readCPs);
   const [cpName, setCpName] = useState('');
   const lab = p.lab || {};
-  const canLab = !!p.eqCapable;
+  // eqOn = the graph is genuinely attached right now — the lab is live even
+  // if eqCapable's snapshot was taken before the relay re-sourced the track.
+  const canLab = !!p.eqCapable || !!p.eqOn;
 
   const saveCp = () => {
     const n = cpName.trim().slice(0, 18);
@@ -170,10 +172,10 @@ function EqTab() {
     <div>
       {!canLab && (
         <div className="note" style={{ marginTop: 0, marginBottom: 12 }}>
-          The equaliser and Audio Lab cannot run on streamed tracks — routing
-          them through Web Audio silences them, because a browser will not
-          expose audio it fetched from another site. Downloaded tracks get the
-          full lab; speed always works, and playback is never disturbed.
+          This track's server blocks direct audio analysis. Touch any control
+          and SurBox re-routes the track through its own relay — position
+          kept, one short re-buffer — and the whole lab lights up. If even
+          the relay cannot serve it, playback is left exactly as it was.
         </div>
       )}
       <EqCurve eq={p.eq || []} bass={p.bass || 0} treb={p.treb || 0} />
@@ -224,8 +226,10 @@ function EqTab() {
       {/* ------------------------------------------- Audio Lab */}
       <div className="hr" />
       <div className="labhd"><Icon n="sliders" size={15} /> Audio Lab
-        <span className="dim sm" style={{ textTransform: 'none', letterSpacing: 0 }}>
-          — real DSP on the live graph</span>
+        {p.eqOn
+          ? <span className="eqlive"><i />Live</span>
+          : <span className="dim sm" style={{ textTransform: 'none', letterSpacing: 0 }}>
+              — real DSP on the live graph</span>}
       </div>
       <div className={`labgrid${canLab ? '' : ' off'}`}>
         <div className="labcell">

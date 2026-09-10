@@ -1702,3 +1702,12 @@ input[type="color"] {
   .labgrid{grid-template-columns:1fr}
   .seg button{font-size:11px;padding:6px 1px}
 }
+
+/* EQ/Lab "Live" pill — the graph is genuinely attached right now */
+.eqlive{display:inline-flex;align-items:center;gap:6px;margin-left:auto;
+  font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--green);border:1px solid color-mix(in srgb,var(--green) 45%,transparent);
+  border-radius:99px;padding:3.5px 10px}
+.eqlive i{width:6px;height:6px;border-radius:50%;background:var(--green);
+  box-shadow:0 0 9px var(--green);animation:eqpulse 1.5s ease-in-out infinite}
+@keyframes eqpulse{50%{opacity:.3}}

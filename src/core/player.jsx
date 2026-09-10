@@ -359,6 +359,11 @@ class Chain {
     this._ramp = (node, v) => node.gain.setTargetAtTime(v, c.currentTime, 0.03);
 
     this.labIn = g(); this.labOut = g();
+    /* The lab REPLACES the direct treb→comp link. Without this disconnect
+       the dry signal kept running in parallel with every effect — karaoke
+       leaked the vocals back in, pitch smeared into a flanger, and each
+       stage arrived at half strength. One line, whole lab. */
+    try { this.treb.disconnect(this.comp); } catch {}
     this.treb.connect(this.labIn);
     this.labOut.connect(this.comp);
 
@@ -610,6 +615,16 @@ function detachHls(el) {
  * and `playWithFallback` below retries WITHOUT the attribute the moment the
  * element reports it could not load. Sound always wins over decoration.
  */
+/** The relay that makes the lab possible on streams. Measured fresh
+ *  (2026-09): the catalog CDNs answer the audio request with credentials
+ *  and expose headers but NO Access-Control-Allow-Origin — so the direct
+ *  crossOrigin handshake fails and any MediaElementSource stays muted.
+ *  The worker pipes the identical bytes with ACAO:* and passes Range
+ *  straight through (206 + content-range verified), which is what keeps
+ *  seeking alive through it. */
+const AUDIO_RELAY = (u) =>
+  `https://omni-proxy.omni-jackbhai.workers.dev/?url=${encodeURIComponent(u)}`;
+
 function setCors(el, on) {
   if (on) el.setAttribute('crossorigin', 'anonymous');
   else el.removeAttribute('crossorigin');
@@ -665,6 +680,19 @@ async function playWithFallback(el, url, rate) {
        CORS handshake shows up as 2 or 4; a genuinely dead link also shows up
        as 4, which is why the retry is cheap and capped at one. */
     if (code !== 2 && code !== 4 && code !== 3 && el.error) throw e;
+    /* Stage 2 — the same bytes through the relay, still CORS-clean, so the
+       visualiser AND the equaliser keep working on streams whose CDN forgot
+       the header. HLS is excluded: its segment URLs resolve against the
+       manifest URL and must not be wrapped. */
+    if (/^https?:/i.test(url) && !isHls(url)) {
+      try {
+        await attach(el, AUDIO_RELAY(url), { cors: true });
+        el.playbackRate = rate;
+        await el.play();
+        return true;                   // relayed, but fully analysable
+      } catch { /* relay down or refused — plain is next */ }
+    }
+    /* Stage 3 — sound always wins. No analyser, no EQ, but music. */
     await attach(el, url, { cors: false });
     el.playbackRate = rate;
     await el.play();
@@ -740,6 +768,16 @@ export function PlayerProvider({ children }) {
   const [lab, setLabState] = useState(readLab);
   const labRef = useRef(lab);
   labRef.current = lab;
+
+  /** canViz with a consequence attached. A track that falls all the way
+   *  back to the plain (no-CORS) path must NOT keep the graph live: a
+   *  cross-origin src without the opt-in mutes a MediaElementSource, so
+   *  the song would go silent mid-playlist. Drop the graph instead —
+   *  sound first, always. */
+  const markViz = (ok) => {
+    setCanViz(ok);
+    if (!ok && chain.ready) { chain.detach(); setEqOn(false); }
+  };
   const [yt, setYt] = useState(null);
   const [stage, setStage] = useState('');   // active YouTube id (IFrame mode)
 
@@ -861,7 +899,7 @@ export function PlayerProvider({ children }) {
         if (cached) { recoveringRef.current = true; retriedRef.current = t.id; }
         setStage('Buffering…');
         const analysable = await playWithFallback(el, r.audio, rate);
-        setCanViz(analysable);
+        markViz(analysable);
         recoveringRef.current = false;
         /* Deliberately NOT attaching the EQ graph here. Routing the element
            through Web Audio is what silenced playback when the context was
@@ -911,7 +949,7 @@ export function PlayerProvider({ children }) {
           setErr(''); setStage('Link expired — refreshing…');
           try {
             const r = await resolveAudio(t.id, { fresh: true, onProgress: setStage });
-            setCanViz(await playWithFallback(el, r.audio, rate));
+            markViz(await playWithFallback(el, r.audio, rate));
             setPlaying(true); setStage(''); setLoading(false); setErr('');
             resumeWarming();
             return;
@@ -930,7 +968,7 @@ export function PlayerProvider({ children }) {
           if (stale()) return;
           const r2 = await resolveAudio(t.id, { fresh: true, onProgress: setStage });
           if (stale()) return;
-          setCanViz(await playWithFallback(el, r2.audio, rate));
+          markViz(await playWithFallback(el, r2.audio, rate));
           setTrack({ ...t, art: t.art || r2.art, artist: t.artist || r2.artist, dlUrl: r2.audio });
           setPlaying(true); setStage(''); setLoading(false); setErr('');
           resumeWarming(); notePlay(t);
@@ -952,7 +990,7 @@ export function PlayerProvider({ children }) {
       /* Tier J hands back an HLS playlist, live radio hands back a plain
          file. attach() tells them apart so both work through one path. */
       try {
-        setCanViz(await playWithFallback(el, url, rate));
+        markViz(await playWithFallback(el, url, rate));
         if (t.kind === 'station') noteStation(url, true);
       } catch (streamErr) {
         /* A station published over http was upgraded to https so it could load
@@ -963,7 +1001,7 @@ export function PlayerProvider({ children }) {
         if (t.kind === 'station') noteStation(url, false);
         if (!t.altStream || t.altStream === url) throw streamErr;
         setStage('Trying the station\u2019s other address\u2026');
-        setCanViz(await playWithFallback(el, t.altStream, rate));
+        markViz(await playWithFallback(el, t.altStream, rate));
         noteStation(t.altStream, true);
         url = t.altStream;
         setStage('');
@@ -1267,6 +1305,58 @@ export function PlayerProvider({ children }) {
    * EQ control, it is verified, and if the context refuses to run the graph is
    * torn down and we say so rather than leaving a silent player.
    */
+  /** Move the ALREADY-PLAYING track onto the relay so the graph can attach.
+   *  Position, rate and play state survive the swap. If the relay cannot
+   *  serve the track, the element is put back exactly as it was — the user
+   *  loses nothing but the equaliser. */
+  const reSource = useCallback(async (el) => {
+    const src = el.currentSrc || el.src || '';
+    if (!/^https?:/i.test(src) || src.includes('omni-proxy.omni-jackbhai.workers.dev')) return false;
+    const at = el.currentTime, pr = el.playbackRate, wasPlaying = !el.paused;
+    const token = playTokenRef.current;
+    const restore = () => {
+      try {
+        setCors(el, false);
+        el.src = src; el.load();
+        el.addEventListener('loadedmetadata', function rest() {
+          el.removeEventListener('loadedmetadata', rest);
+          try { if (at > 0.5 && isFinite(el.duration)) el.currentTime = Math.min(at, el.duration - 1); } catch {}
+          el.playbackRate = pr;
+          if (wasPlaying) el.play().catch(() => {});
+        });
+      } catch {}
+    };
+    try {
+      el.pause();
+      setCors(el, true);
+      el.src = AUDIO_RELAY(src);
+      await new Promise((res, rej) => {
+        let settled = false;
+        const finish = (fn, arg) => {
+          if (settled) return; settled = true;
+          clearTimeout(timer);
+          el.removeEventListener('loadedmetadata', onOk);
+          el.removeEventListener('error', onBad);
+          fn(arg);
+        };
+        const timer = setTimeout(() => finish(rej, new Error('relay timeout')), 12000);
+        const onOk = () => finish(res);
+        const onBad = () => finish(rej, new Error('relay refused'));
+        el.addEventListener('loadedmetadata', onOk);
+        el.addEventListener('error', onBad);
+        el.load();
+      });
+      if (playTokenRef.current !== token) return false;   // track changed mid-swap
+      try { if (at > 0.5 && isFinite(el.duration) && at < el.duration - 1) el.currentTime = at; } catch {}
+      el.playbackRate = pr;
+      if (wasPlaying) await el.play().catch(() => {});
+      return true;
+    } catch {
+      restore();
+      return false;
+    }
+  }, []);
+
   /** Apply a full lab state to the live graph. Every setter is a no-op when
    *  the graph is not attached, so this is safe to call speculatively. */
   const applyLab = useCallback((s) => {
@@ -1281,6 +1371,15 @@ export function PlayerProvider({ children }) {
   const enableEq = useCallback(async () => {
     const el = audio.current;
     if (!el || chain.ready) return chain.ready;
+    /* A stream that failed the direct CORS handshake can still be analysed:
+       re-route it through the relay first. This is the only moment the
+       running track is disturbed, and it puts itself back if the relay
+       cannot serve it. */
+    if (!Chain.canProcess(el)) {
+      const re = await reSource(el);
+      setCanViz(re);
+      if (!re) return false;
+    }
     const ok = await chain.attach(el);
     setEqOn(ok);
     if (!ok) { /* the EQ panel already explains why; never disturb playback */ }
@@ -1291,7 +1390,7 @@ export function PlayerProvider({ children }) {
       applyLab(labRef.current);
     }
     return ok;
-  }, [eq, bass, treb, comp, applyLab]);
+  }, [eq, bass, treb, comp, applyLab, reSource]);
 
   /** Push one lab setting (or several). Persists, then routes through the
    *  same guarded attach the EQ uses — the lab never builds its own graph. */
@@ -1461,7 +1560,7 @@ export function PlayerProvider({ children }) {
             .then((r) => {
               const el = audio.current;
               if (!el || track?.id !== t.id) return;
-              return playWithFallback(el, r.audio, rate).then(setCanViz);
+              return playWithFallback(el, r.audio, rate).then(markViz);
             })
             .then(() => { setStage(''); setErr(''); setPlaying(true); resumeWarming(); })
             .catch(() => { setStage(''); setErr('Stream failed — tap retry'); resumeWarming(); })
