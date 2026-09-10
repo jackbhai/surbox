@@ -5,8 +5,9 @@
  */
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { lyricsPool } from './ytmusic';
-import { resolveAudio, prefetchAudio, prefetchNext, forgetAudio, isCached,
+import { resolveAudio, prefetchAudio, prefetchNext, forgetAudio, isCached, cachedAudio,
          pauseWarming, resumeWarming, rememberTrack } from './audio-resolve';
+import { playBuffered, bufferAhead, hasBuffered, closeBuffered, seamHold } from './buffered-play';
 import { getDownload } from './downloads';
 import { resolve } from './engine';
 import { notePlay, noteListen } from './library';
@@ -677,6 +678,61 @@ async function playWithFallback(el, url, rate) {
   }
 }
 
+/**
+ * Point the element at a track URL — buffered when the URL allows it.
+ *
+ * WHY A BUFFERED PATH AT ALL
+ * Direct streaming was the only path until the app reached phones, where
+ * it fell apart in three measured ways (see buffered-play.js for the
+ * numbers): the primary CDN truncates a transfer at 4 MiB and refuses
+ * Range resumes, so a mid-song network hiccup became a permanent stall;
+ * the demuxer chewing through the gap is the crackle the user called
+ * "fati hui awaz"; and the Android WebView's own media buffering is the
+ * weakest of any browser Chromium ships. So a normal track is now FETCHED
+ * — one connection, the same one the element would have opened — and the
+ * element is handed the bytes locally. Playback starts from the opening
+ * ~45 s while the rest downloads, and a completed buffer is remembered so
+ * replays are instant. Live stations, HLS playlists and already-local
+ * blobs keep the direct path, and anything the buffered attempt cannot
+ * do falls back to it silently.
+ *
+ * Returns whether script can read the samples (the visualiser's question):
+ * always true for a local blob, and whatever the direct path reports
+ * otherwise.
+ */
+async function startAudio(el, url, rate, t = {}, opts = {}) {
+  /* An empty url means the bytes are already local (the resolver was
+     skipped on purpose); the buffered store is then the only source, and
+     a miss is a real failure the caller's recovery handles. */
+  if (!url && !hasBuffered(t?.id)) throw new Error('No playable source');
+  const bufferable = t.kind !== 'station'
+    && !isHls(url)
+    && !/^(blob|data):/i.test(String(url || ''));
+  if (bufferable) {
+    try {
+      const r = await playBuffered(el, url, {
+        rate,
+        key: t.id,
+        dur: +(t.dur || t.duration) || 0,
+        onStage: opts.onStage,
+        onFull: opts.onFull,
+      });
+      if (r) return true;              // playing a local blob: readable samples
+      if (!url) throw new Error('The buffered copy of this track is gone');
+    } catch (e) {
+      if (!url) throw e;               // no url means no fallback exists
+      /* else: not bufferable after all — stream it */
+    }
+  }
+  /* The buffered window is seconds long, so a newer play() may have taken
+     the element while this one waited. Touching the element after that
+     would overwrite the track the user actually chose — the exact bug the
+     play tokens exist to prevent — so the caller's staleness check is
+     honoured before any fallback touches the element. */
+  if (opts.stale?.()) return true;     // abandoned: the newer play owns the element
+  return playWithFallback(el, url, rate);
+}
+
 /** Audio Lab settings — remembered per device, re-applied whenever the
  *  graph re-attaches (a fresh context starts every stage bypassed). */
 const LAB_DEFAULTS = {
@@ -827,9 +883,16 @@ export function PlayerProvider({ children }) {
            is same-origin, so it plays in flight mode, starts in ~0 ms, and
            the equaliser and visualiser read real samples from it. */
         const dl = await getDownload(t.id);
+        /* So does a buffered copy: the bytes never expire (the resolved
+           URL does, within minutes), so a replay skips the resolver
+           entirely — instant, offline-safe, and immune to a resolver or
+           relay outage. */
+        const local = hasBuffered(t.id);
         const r = dl
           ? { audio: dl, via: 'offline', approximate: false }
-          : await resolveAudio(t.id, { onProgress: setStage });
+          : local
+            ? { audio: '', via: 'buffer', approximate: false }
+            : await resolveAudio(t.id, { onProgress: setStage });
         if (clock) clearInterval(clock);
         if (stale()) return;          // the user moved on; leave their track alone
         setVia(r.via || '');
@@ -865,7 +928,21 @@ export function PlayerProvider({ children }) {
         // this BEFORE assigning src is what stops the "Stream failed" flash.
         if (cached) { recoveringRef.current = true; retriedRef.current = t.id; }
         setStage('Buffering…');
-        const analysable = await playWithFallback(el, r.audio, rate);
+        const analysable = await startAudio(el, r.audio, rate, meta, {
+          onStage: setStage,
+          stale,
+          /* once this track's bytes are fully local, start pulling the next
+             one — a skip then lands on a blob and needs no network at all */
+          onFull: () => {
+            const i = list ? list.findIndex((x) => (x.id ?? x.url) === (t.id ?? t.url)) : -1;
+            const nxt = i >= 0 ? list[i + 1] : null;
+            if (nxt?.id) {
+              const rec = cachedAudio(nxt.id);
+              if (rec?.audio && !hasBuffered(nxt.id)) bufferAhead(rec.audio, nxt.id);
+            }
+          },
+        });
+        if (stale()) return;
         setCanViz(analysable);
         recoveringRef.current = false;
         /* Deliberately NOT attaching the EQ graph here. Routing the element
@@ -916,7 +993,8 @@ export function PlayerProvider({ children }) {
           setErr(''); setStage('Link expired — refreshing…');
           try {
             const r = await resolveAudio(t.id, { fresh: true, onProgress: setStage });
-            setCanViz(await playWithFallback(el, r.audio, rate));
+            setCanViz(await startAudio(el, r.audio, rate, t, { onStage: setStage, stale }));
+            if (stale()) return;
             setPlaying(true); setStage(''); setLoading(false); setErr('');
             resumeWarming();
             return;
@@ -935,7 +1013,8 @@ export function PlayerProvider({ children }) {
           if (stale()) return;
           const r2 = await resolveAudio(t.id, { fresh: true, onProgress: setStage });
           if (stale()) return;
-          setCanViz(await playWithFallback(el, r2.audio, rate));
+          setCanViz(await startAudio(el, r2.audio, rate, t, { onStage: setStage, stale }));
+          if (stale()) return;
           setTrack({ ...t, art: t.art || r2.art, artist: t.artist || r2.artist, dlUrl: r2.audio });
           setPlaying(true); setStage(''); setLoading(false); setErr('');
           resumeWarming(); notePlay(t);
@@ -957,7 +1036,8 @@ export function PlayerProvider({ children }) {
       /* Tier J hands back an HLS playlist, live radio hands back a plain
          file. attach() tells them apart so both work through one path. */
       try {
-        setCanViz(await playWithFallback(el, url, rate));
+        setCanViz(await startAudio(el, url, rate, t, { stale }));
+        if (stale()) return;
         if (t.kind === 'station') noteStation(url, true);
       } catch (streamErr) {
         /* A station published over http was upgraded to https so it could load
@@ -968,7 +1048,8 @@ export function PlayerProvider({ children }) {
         if (t.kind === 'station') noteStation(url, false);
         if (!t.altStream || t.altStream === url) throw streamErr;
         setStage('Trying the station\u2019s other address\u2026');
-        setCanViz(await playWithFallback(el, t.altStream, rate));
+        setCanViz(await startAudio(el, t.altStream, rate, t, { stale }));
+        if (stale()) return;
         noteStation(t.altStream, true);
         url = t.altStream;
         setStage('');
@@ -1151,6 +1232,36 @@ export function PlayerProvider({ children }) {
     let live = true;
     const t = setTimeout(() => { if (live) prefetchAudio(nxt.id, 0); }, 1200);
     return () => { live = false; clearTimeout(t); };
+  }, [queue, idx]);
+
+  /**
+   * Pull the next track's BYTES, once its URL is known.
+   *
+   * The effect above warms the next track's stream URL (a resolver call,
+   * a different host, cheap). This goes one step further and pulls the
+   * audio itself into the local buffer once that URL exists, so pressing
+   * Next lands on a blob and needs the network for nothing. The
+   * one-connection rule lives in buffered-play.js: this never runs while
+   * the current track is still downloading, and the fetch for the track
+   * the user just tapped always pre-empts it.
+   *
+   * The URL arrives whenever warming finishes (often several seconds), so
+   * this keeps checking quietly rather than assuming the first look was
+   * final. Everything is a no-op once the bytes are in.
+   */
+  useEffect(() => {
+    if (!queue.length || idx < 0) return;
+    const nxt = queue[idx + 1];
+    if (!nxt?.id) return;
+    let live = true;
+    const tryPull = () => {
+      if (!live || hasBuffered(nxt.id)) return;
+      const rec = cachedAudio(nxt.id);
+      if (rec?.audio) bufferAhead(rec.audio, nxt.id);
+    };
+    const t = setTimeout(tryPull, 5000);
+    const iv = setInterval(tryPull, 20000);
+    return () => { live = false; clearTimeout(t); clearInterval(iv); };
   }, [queue, idx]);
 
   const seek = useCallback((s) => {
@@ -1385,6 +1496,7 @@ export function PlayerProvider({ children }) {
     playNext, addToQueue, removeAt, moveInQueue, resumeSession,
     eqOn, enableEq, lab, setLab,
     stop: () => {
+      closeBuffered();               // abort any in-flight byte fetch, free the pipe
       try { audio.current?.pause(); } catch {}
       try { if (audio.current) { audio.current.removeAttribute('src'); audio.current.load(); } } catch {}
       setPlaying(false); setTrack(null); setFull(false); setMiniHidden(false); setQueue([]); setIdx(-1);
@@ -1432,6 +1544,11 @@ export function PlayerProvider({ children }) {
 
           // Nothing we load ourselves should be treated as a stream failure.
           if (el && (el.src || '').startsWith('data:')) return;
+          /* A truncated opening chunk ends as a decode error, and the
+             buffered session holds at that seam on its own — that is
+             buffering, not a dead stream, and the recovery here must not
+             fight it. */
+          if (seamHold()) return;
 
           const t = track;
           if (!t) return;
@@ -1466,7 +1583,7 @@ export function PlayerProvider({ children }) {
             .then((r) => {
               const el = audio.current;
               if (!el || track?.id !== t.id) return;
-              return playWithFallback(el, r.audio, rate).then(setCanViz);
+              return startAudio(el, r.audio, rate, t).then(setCanViz);
             })
             .then(() => { setStage(''); setErr(''); setPlaying(true); resumeWarming(); })
             .catch(() => { setStage(''); setErr('Stream failed — tap retry'); resumeWarming(); })

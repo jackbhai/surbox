@@ -147,6 +147,10 @@ function cacheSet(id, rec) {
 }
 export const isCached = (id) => !!cacheGet(id);
 
+/** The cached resolve record for an id, if one is still fresh. Used by the
+ *  byte-prefetch to learn the next track's URL without a re-resolve. */
+export const cachedAudio = (id) => (id ? cacheGet(id) : null);
+
 /* ------------------------------------------------------------ proxy race */
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

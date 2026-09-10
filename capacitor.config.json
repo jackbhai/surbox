@@ -2,9 +2,13 @@
   "appId": "com.jackbhai.surbox",
   "appName": "SurBox",
   "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  },
   "android": {
     "backgroundColor": "#000000",
-    "keepRunning": true
+    "keepRunning": true,
+    "allowMixedContent": true
   },
   "plugins": {
     "SplashScreen": {
