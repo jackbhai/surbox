@@ -197,7 +197,11 @@ class Chain {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC || !el) return false;
     try {
-      this.ctx = new AC();
+      /* latencyHint 'playback' asks for a larger internal buffer — the
+         default 'interactive' size is what crackles under load in the
+         WebView. Playback does not need low latency; it needs to never
+         underrun. */
+      this.ctx = new AC({ latencyHint: 'playback' });
       this.el = el;
       this.src = this.ctx.createMediaElementSource(el);
       this.eq = BANDS.map((f, i) => {
@@ -295,7 +299,7 @@ class Chain {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC || !el) return null;
     try {
-      this.vizCtx = new AC();
+      this.vizCtx = new AC({ latencyHint: 'playback' });
       this.vizEl = el;
       const src = this.vizCtx.createMediaElementSource(el);
       const an = this.vizCtx.createAnalyser();

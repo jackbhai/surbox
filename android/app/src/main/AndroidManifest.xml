@@ -32,6 +32,7 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <!-- the Audio Lab's haptic ticks use navigator.vibrate -->
     <uses-permission android:name="android.permission.VIBRATE" />
 </manifest>

@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { usePlayer, chain, PRESETS } from '../core/player';
+import { nativeEqAvailable, nativeEqDescribe, nativeEqSetEnabled, nativeEqSetBand,
+         nativeEqSetBass, nativeEqSetVirt, nativeEqUsePreset } from '../core/native-eq';
 import { isFav, toggleFav } from '../core/library';
 import { downloadTrack, removeDownload, isDownloaded, isDownloading, onDownloads } from '../core/downloads';
 import { resolveAudio } from '../core/audio-resolve';
@@ -688,6 +690,94 @@ export function FullPlayer() {
    real-time trick, not AI stem separation: expect a great karaoke track
    on standard mixes, with some bleed on songs hard-panned either side.
    ═══════════════════════════════════════════════════════════════════════════ */
+/* The system equaliser — Android's own DSP, in the audio server, costing
+ * the WebView nothing. This is what the app uses; the WebAudio panel
+ * below it is the browser's version (and, in the app, the place for the
+ * karaoke/vocal experiments that need sample access). */
+function NativeEqPanel() {
+  const [info, setInfo] = useState(null);
+  const [on, setOn] = useState(false);
+  const [err, setErr] = useState('');
+  const [preset, setPreset] = useState(-1);
+
+  useEffect(() => {
+    let live = true;
+    nativeEqDescribe()
+      .then((d) => { if (live) setInfo(d); })
+      .catch((e) => { if (live) setErr(String(e?.message || e)); });
+    return () => { live = false; };
+  }, []);
+
+  if (err) return (
+    <div className="note">
+      This device did not expose its equaliser ({err}). The WebAudio panel
+      below still works.
+    </div>
+  );
+  if (!info) return <div className="dim sm">Reading this device's equaliser…</div>;
+
+  const dB = (mb) => (mb > 0 ? `+${(mb / 100).toFixed(1)}` : (mb / 100).toFixed(1));
+
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <div>
+          <b style={{ fontSize: 14 }}>System Equaliser</b>
+          <div className="dim sm">Android's own DSP — zero load on playback</div>
+        </div>
+        <button className={`cat ${on ? 'on' : ''}`} onClick={() => {
+          const v = !on; setOn(v); setPreset(-1);
+          nativeEqSetEnabled(v);
+        }}><Icon n="sliders" size={13} /> {on ? 'ON' : 'OFF'}</button>
+      </div>
+
+      {!!info.presets?.length && (
+        <div className="btnrow" style={{ flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+          {info.presets.map((pr) => (
+            <button key={pr.index} className={`cat ${preset === pr.index ? 'on' : ''}`}
+              onClick={() => { setPreset(pr.index); if (!on) { setOn(true); } nativeEqUsePreset(pr.index); }}>
+              {pr.name}</button>))}
+        </div>
+      )}
+
+      {info.bands.map((b, i) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '7px 0' }}>
+          <span className="dim sm" style={{ flex: '0 0 58px', fontVariantNumeric: 'tabular-nums' }}>
+            {b.freq >= 1000 ? `${Math.round(b.freq / 1000)}k` : `${b.freq}`} Hz</span>
+          <input type="range" min={info.min} max={info.max} step={50} defaultValue={b.level}
+            onChange={(e) => {
+              if (!on) { setOn(true); }
+              setPreset(-1);
+              nativeEqSetBand(i, +e.target.value);
+            }} style={{ flex: 1 }} />
+          <span className="mono sm" style={{ flex: '0 0 46px', textAlign: 'right' }}>{dB(b.level)}dB</span>
+        </div>
+      ))}
+
+      <div style={{ marginTop: 10 }}>
+        <label className="dim sm">Bass boost</label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <input type="range" min={0} max={1000} step={25} defaultValue={0}
+            onChange={(e) => { if (!on) { setOn(true); } nativeEqSetBass(+e.target.value); }}
+            style={{ flex: 1 }} />
+        </div>
+        <label className="dim sm" style={{ marginTop: 8 }}>Wideness (virtualizer)</label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <input type="range" min={0} max={1000} step={25} defaultValue={0}
+            onChange={(e) => { if (!on) { setOn(true); } nativeEqSetVirt(+e.target.value); }}
+            style={{ flex: 1 }} />
+        </div>
+      </div>
+
+      <div className="note" style={{ marginTop: 10 }}>
+        Runs in Android's audio system, outside the app's audio path — it
+        cannot cause the crackling the in-WebView equaliser did. OFF passes
+        the sound through untouched.
+      </div>
+    </div>
+  );
+}
+
 function EqPanel({ p }) {
   if (!p) return null;
   const lab = p.lab || {};
@@ -715,7 +805,10 @@ function EqPanel({ p }) {
 
   return (
     <div>
-      {/* ---- master switch ---- */}
+      {/* ---- the app gets the system equaliser first ---- */}
+      {nativeEqAvailable() && <NativeEqPanel />}
+
+      {/* ---- master switch (WebAudio graph) ---- */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
         <div>
           <b style={{ fontSize: 14 }}>Equaliser &amp; Audio Lab</b>
