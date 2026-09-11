@@ -29,7 +29,7 @@ const DEFAULTS = {
   proxyUrl: '',          // user's own relay; blank means use BUILTIN_PROXY
   useBuiltin: true,      // fall back to the bundled relay
   autoRadio: true,       // keep the queue topped up so playback never ends
-  sfx: true,             // travel-panel sounds, synthesised locally (core/sfx.js)
+  dataSaver: false,      // stream at 160 kbps instead of 320 — half the data
 };
 
 let cache = null;

@@ -60,7 +60,11 @@ export async function downloadTrack(track, { resolveAudio }) {
   busy.add(track.id); emit();
   try {
     const r = await resolveAudio(track.id, { fresh: true });
-    const res = await fetch(r.audio, { mode: 'cors' });
+    /* A download is a keeper: it takes the best rung that exists even
+       when Data Saver is on — that setting is for listening, not for
+       the offline copy you are keeping. */
+    const top = (track.streams || []).find((s) => String(s.q || '').startsWith('320'))?.url;
+    const res = await fetch(top || r.audio, { mode: 'cors' });
     if (!res.ok) throw new Error(`Source answered ${res.status}`);
     const blob = await res.blob();
     if (!blob.size) throw new Error('Empty file');

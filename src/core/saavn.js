@@ -54,7 +54,7 @@
  *     pretending the failure is a network error.
  */
 
-import { proxyBase } from './settings';
+import { proxyBase, getSettings } from './settings';
 
 const enc = encodeURIComponent;
 const API = 'https://www.jiosaavn.com/api.php';
@@ -272,14 +272,30 @@ function mirrorRows(d) {
   return [];
 }
 
+/* The rung to actually stream. Data Saver prefers 160 kbps — roughly half
+ * the bytes for a quality phone speakers keep quiet about — but never
+ * refuses a higher rung when it is the only one that exists. Only the
+ * mirror path uses this: those rungs were listed by the API, so the
+ * choice is between URLs that all exist. (The catalogue's own backstop
+ * synthesises rung URLs by pattern, so it stays on 320 — a fabricated
+ * 160 that 404s would be a worse bug than a bigger file.) Downloads
+ * bypass this and keep their best copy. */
+function pickStream(streams) {
+  const rungs = (Array.isArray(streams) ? streams : []).filter((s) => s?.url);
+  if (!rungs.length) return '';
+  const find = (q) => rungs.find((s) => String(s.q || '').startsWith(q))?.url || '';
+  const best = getSettings().dataSaver
+    ? (find('160') || find('96') || find('48') || find('320'))
+    : (find('320') || find('160') || find('96') || find('48'));
+  return best || rungs[0].url;
+}
+
 function shapeMirrorSong(x, linkKey) {
   const dl = Array.isArray(x.downloadUrl) ? x.downloadUrl : [];
-  const at = (want) => {
-    const hit = dl.find((q) => String(q.quality || '').startsWith(want));
-    return hit ? (hit[linkKey] || hit.link || hit.url || '') : '';
-  };
-  const last = dl.length ? (dl[dl.length - 1][linkKey] || dl[dl.length - 1].link || dl[dl.length - 1].url || '') : '';
-  const best = at('320') || at('160') || at('96') || at('48') || last;
+  const rungs = dl
+    .map((q) => ({ q: q.quality, url: q[linkKey] || q.link || q.url || '' }))
+    .filter((q) => q.url);
+  const best = pickStream(rungs);
   const artists = x.primaryArtists ||
     (Array.isArray(x.artists?.primary) ? x.artists.primary.map((a) => a.name).join(', ') : '') ||
     (typeof x.artists === 'string' ? x.artists : '');
@@ -297,7 +313,7 @@ function shapeMirrorSong(x, linkKey) {
     lang: x.language || '',
     playCount: +(x.playCount || 0),
     base: best,
-    streams: dl.map((q) => ({ q: q.quality, url: q[linkKey] || q.link || q.url })).filter((q) => q.url),
+    streams: rungs,
     stream: best,
     src: 'catalogue-2',
   };
@@ -415,14 +431,23 @@ async function relayRace(query, limit) {
   if (!b || !usable('relay-song')) return null;
   try {
     const d = await fetchJson(`${b}/song?q=${enc(query)}&limit=${limit}`, 9000);
-    const rows = (d?.results || []).map((r) => ({
-      ...r,
-      lang: r.lang || '',
-      playCount: r.playCount || 0,
-      base: r.stream,
-      streams: (r.streams || []).length ? r.streams : streamsFor(r.stream),
-      src: 'catalogue-2',
-    })).filter((r) => r.stream);
+    const rows = (d?.results || []).map((r) => {
+      /* The relay picks its own rung (320); Data Saver re-picks here, from
+         the rungs the relay actually listed — the same rule the mirror
+         path applies. A stream with no listed rungs is left untouched:
+         re-picking from a pattern-fabricated ladder is guessing. */
+      const rungs = Array.isArray(r.streams) ? r.streams.filter((x) => x?.url) : [];
+      const picked = rungs.length ? (pickStream(rungs) || r.stream) : r.stream;
+      return {
+        ...r,
+        lang: r.lang || '',
+        playCount: r.playCount || 0,
+        base: picked,
+        stream: picked,
+        streams: rungs.length ? rungs : streamsFor(r.stream),
+        src: 'catalogue-2',
+      };
+    }).filter((r) => r.stream);
     if (!rows.length) { benchRoute('relay-song', 60000); return null; }
     return rows;
   } catch { benchRoute('relay-song'); return null; }

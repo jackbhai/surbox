@@ -8,6 +8,7 @@ import { lyricsPool } from './ytmusic';
 import { resolveAudio, prefetchAudio, prefetchNext, forgetAudio, isCached, cachedAudio,
          pauseWarming, resumeWarming, rememberTrack } from './audio-resolve';
 import { playBuffered, bufferAhead, hasBuffered, storeUrl, rescueStalled, seamHold, isNativeApp } from './buffered-play';
+import { getSettings, setSetting } from './settings';
 import { getDownload } from './downloads';
 import { resolve } from './engine';
 import { notePlay, noteListen } from './library';
@@ -775,7 +776,15 @@ export function PlayerProvider({ children }) {
   const recoveringRef = useRef(false);  // a re-resolve is in flight
   const retryCountRef = useRef(0);      // how many times this track was re-resolved
   const playTokenRef = useRef(0);       // only the newest play() may touch the element
-  const autoRadio = useRef(false);      // keep the queue topped up forever
+  /* Endless radio — on until the user says otherwise. A music player that
+     stops when the list runs out feels broken; with this on, the queue is
+     quietly extended with material built around what is playing, so the
+     music simply never ends. Persisted, and ON by default. */
+  const [radio, setRadioS] = useState(() => {
+    try { return getSettings().autoRadio !== false; } catch { return true; }
+  });
+  const autoRadio = useRef(radio);      // keep the queue topped up forever
+  useEffect(() => { autoRadio.current = radio; }, [radio]);
   const [queue, setQueue] = useState([]);
   const [idx, setIdx] = useState(-1);
   const [track, setTrack] = useState(null);
@@ -1273,7 +1282,11 @@ export function PlayerProvider({ children }) {
 
 
   /** Turn endless radio on/off. When on, the queue never runs dry. */
-  const setRadio = useCallback((on) => { autoRadio.current = !!on; }, []);
+  const setRadio = useCallback((on) => {
+    autoRadio.current = !!on;
+    setRadioS(!!on);
+    try { setSetting('autoRadio', !!on); } catch {}
+  }, []);
 
   /**
    * ENDLESS PLAY — top the queue up before it runs out.
@@ -1589,7 +1602,7 @@ export function PlayerProvider({ children }) {
   const value = {
     audio, yt, stage, track, playing, loading, pos, dur, queue, idx, shuffle, repeat, full, miniHidden, err, lyrics, via,
     canViz,
-    eq, preset, bass, treb, comp, rate, sleep,
+    eq, preset, bass, treb, comp, rate, sleep, radio,
     play, toggle, step, seek, retry, extendQueue, setRadio, setShuffle, setRepeat, setFull, setMiniHidden, setSleep, applyPreset,
     playNext, addToQueue, removeAt, moveInQueue, resumeSession,
     eqOn, enableEq, lab, setLab,

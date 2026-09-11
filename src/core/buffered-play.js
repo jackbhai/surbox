@@ -233,6 +233,26 @@ async function fetchToBlob(url, { key, durSec, noOpen = false, signal, onOpen, o
 /** The stored object URL for a key, if the bytes are local. */
 export const storeUrl = (key) => (key ? STORE.get(key)?.url : null) || null;
 
+/** How much the instant-replay store is holding, for the Settings page. */
+export function replayStats() {
+  let n = 0, bytes = 0;
+  for (const v of STORE.values()) { n++; bytes += v.size || 0; }
+  return { n, bytes };
+}
+
+/** Empty the replay store. The track that is playing right now is spared —
+ *  revoking the blob its element is reading from would cut it off mid-note. */
+export function clearReplays(exceptKey) {
+  let freed = 0;
+  for (const [k, v] of [...STORE.entries()]) {
+    if (k === exceptKey) continue;
+    freed += v.size || 0;
+    try { if (v?.url?.startsWith('blob:')) URL.revokeObjectURL(v.url); } catch {}
+    STORE.delete(k);
+  }
+  return freed;
+}
+
 /** True inside the Capacitor Android/iOS shell — the environment whose
  *  media stack streams worst (see the file header) and needs the buffered
  *  path; a plain browser plays direct, exactly like omnitools. */

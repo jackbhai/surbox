@@ -2,6 +2,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import { usePlayer, chain, PRESETS } from '../core/player';
 import { nativeEqAvailable, nativeEqDescribe, nativeEqSetEnabled, nativeEqSetBand,
          nativeEqSetBass, nativeEqSetVirt, nativeEqUsePreset } from '../core/native-eq';
+import { getSettings, setSetting, usingBuiltin, testProxy } from '../core/settings';
+import { replayStats, clearReplays } from '../core/buffered-play';
+import { downloadCount, downloadBytes } from '../core/downloads';
 import { isFav, toggleFav } from '../core/library';
 import { downloadTrack, removeDownload, isDownloaded, isDownloading, onDownloads } from '../core/downloads';
 import { resolveAudio } from '../core/audio-resolve';
@@ -365,10 +368,13 @@ export function FullPlayer() {
           onClick={() => setSleepOpen((v) => !v)}
           style={{ color: p.sleep ? 'var(--green)' : '' }}>
           <Icon n={p.sleep ? 'timer' : 'clock'} size={17} /></button>
+        <button className="iconbtn" aria-label="Settings" title="Settings"
+          onClick={() => setTab('set')}>
+          <Icon n="cog" size={17} /></button>
       </div>
 
       <div className="full-tabs">
-        {[['art','Player'],['lyrics','Lyrics'],['eq','Equalizer'],['queue','Queue']].map(([v, l]) => (
+        {[['art','Player'],['lyrics','Lyrics'],['eq','Equalizer'],['queue','Queue'],['set','Settings']].map(([v, l]) => (
           <button key={v} className={`cat ${tab === v ? 'on' : ''}`} onClick={() => setTab(v)}>{l}</button>))}
       </div>
 
@@ -473,6 +479,7 @@ export function FullPlayer() {
           </div>)}
 
         {tab === 'eq' && <EqPanel p={p} />}
+          {tab === 'set' && <SettingsTab p={p} />}
 
         {tab === 'queue' && (
           <div className="list">
@@ -690,6 +697,156 @@ export function FullPlayer() {
    real-time trick, not AI stem separation: expect a great karaoke track
    on standard mixes, with some bleed on songs hard-panned either side.
    ═══════════════════════════════════════════════════════════════════════════ */
+/* ------------------------------------------------------------------ SETTINGS
+ * Everything the app quietly decided on the user's behalf, finally in the
+ * user's hands: endless play, how many bytes a song costs, what is stored
+ * on the device and the relay the audio resolution rides on. Each row is
+ * a real, working switch — nothing here is decoration. */
+function SettingsTab({ p }) {
+  const [saver, setSaver] = useState(() => getSettings().dataSaver === true);
+  const [radio, setRadio] = useState(() => p.radio !== false);
+  const [store, setStore] = useState(null);
+  const [persisted, setPersisted] = useState(null);
+  const [replays, setReplays] = useState(() => replayStats());
+  const [freed, setFreed] = useState(null);
+  const [proxy, setProxy] = useState(() => getSettings().proxyUrl || '');
+  const [builtin, setBuiltin] = useState(() => getSettings().useBuiltin !== false);
+  const [test, setTest] = useState(null);      // { ok, ms, error } | 'testing'
+
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      try {
+        const est = await navigator.storage?.estimate?.();
+        if (!live) return;
+        setStore(est ? { usage: est.usage || 0, quota: est.quota || 0 } : null);
+        try { setPersisted(await navigator.storage?.persisted?.()); } catch {}
+      } catch {}
+    })();
+    return () => { live = false; };
+  }, []);
+
+  const mb = (n) => n >= (1 << 30) ? (n / (1 << 30)).toFixed(1) + ' GB'
+    : n >= (1 << 20) ? (n / (1 << 20)).toFixed(1) + ' MB'
+    : (n / 1024).toFixed(0) + ' KB';
+
+  /* The whole header row is the touch target — a thumb-sized tap, not a
+     thumb-sized hunt for a tiny pill. The button and the option chips stop
+     the click from bubbling back up so one tap stays one tap. */
+  const Row = ({ on, set, title, sub, children }) => (
+    <div style={{ padding: '11px 0', borderBottom: '1px solid rgba(128,128,128,.14)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, cursor: 'pointer' }}
+        onClick={() => set(!on)}>
+        <div style={{ minWidth: 0 }}>
+          <b style={{ fontSize: 13.5 }}>{title}</b>
+          <div className="dim sm">{sub}</div>
+        </div>
+        <button className={`cat ${on ? 'on' : ''}`} style={{ flex: '0 0 auto' }}
+          onClick={(e) => { e.stopPropagation(); set(!on); }}>{on ? 'ON' : 'OFF'}</button>
+      </div>
+      {children}
+    </div>
+  );
+
+  return (
+    <div className="settings-tab">
+      <div className="sec">
+        <div className="dim sm" style={{ letterSpacing: '.08em', textTransform: 'uppercase', marginBottom: 4 }}>Playback</div>
+
+        <Row title="Endless Radio" on={radio}
+          sub="Gaane kabhi khatam nahi honge — queue khud bharti rehti hai (similar songs)"
+          set={(v) => { setRadio(v); try { p.setRadio(v); } catch {} }} />
+
+        <Row title="Data Saver" on={saver}
+          sub="Stream 160 kbps instead of 320 — roughly half the data. Naye gaanon pe lagega; downloads always keep 320."
+          set={(v) => { setSaver(v); setSetting('dataSaver', v); }} />
+
+        <Row title="Sleep Timer" on={p.sleep > 0}
+          sub={p.sleep > 0 ? `Music stops in ${p.sleep} min` : 'Music stops on its own after a while'}
+          set={(v) => p.setSleep(v ? 30 : 0)} >
+          {p.sleep > 0 && (
+            <div className="btnrow" style={{ flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+              {[5, 15, 30, 45, 60].map((m) => (
+                <button key={m} className={`cat ${p.sleep === m ? 'on' : ''}`}
+                  onClick={(e) => { e.stopPropagation(); p.setSleep(m); }}>{m}m</button>))}
+            </div>)}
+        </Row>
+      </div>
+
+      <div className="sec" style={{ marginTop: 16 }}>
+        <div className="dim sm" style={{ letterSpacing: '.08em', textTransform: 'uppercase', marginBottom: 4 }}>Storage</div>
+
+        {store && (
+          <div style={{ padding: '11px 0', borderBottom: '1px solid rgba(128,128,128,.14)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+              <b>Used</b><span className="mono">{mb(store.usage)}{store.quota ? ` / ${mb(store.quota)}` : ''}</span>
+            </div>
+            {store.quota > 0 && (
+              <div style={{ height: 5, borderRadius: 3, background: 'rgba(128,128,128,.25)', marginTop: 7, overflow: 'hidden' }}>
+                <div style={{ width: Math.min(100, (store.usage / store.quota) * 100).toFixed(1) + '%', height: '100%', background: 'var(--acc, #6c8cff)' }} />
+              </div>)}
+            <div className="dim sm" style={{ marginTop: 6 }}>
+              {downloadCount()} song{downloadCount() === 1 ? '' : 's'} downloaded ({mb(downloadBytes())}) · {replays.n} instant-replay cop{replays.n === 1 ? 'y' : 'ies'} ({mb(replays.bytes)})
+            </div>
+            <div className="btnrow" style={{ gap: 8, marginTop: 9 }}>
+              {persisted === false && (
+                <button className="btn ghost sm" onClick={async () => {
+                  try { setPersisted(await navigator.storage?.persist?.()); } catch {}
+                }}><Icon n="lock" size={14} /> Keep my data</button>)}
+              <button className="btn ghost sm" disabled={!replays.n} style={{ opacity: replays.n ? 1 : .5 }}
+                onClick={() => { const f = clearReplays(p.track?.id); setFreed(f); setReplays(replayStats()); }}>
+                <Icon n="trash" size={14} /> Clear instant-replays</button>
+            </div>
+            {freed != null && <div className="dim sm" style={{ marginTop: 6 }}>Freed {mb(freed)}{p.track ? ' — the playing song was kept' : ''}.</div>}
+          </div>
+        )}
+      </div>
+
+      <div className="sec" style={{ marginTop: 16 }}>
+        <div className="dim sm" style={{ letterSpacing: '.08em', textTransform: 'uppercase', marginBottom: 4 }}>Advanced · Relay</div>
+        <div style={{ padding: '11px 0' }}>
+          <Row title="Built-in relay" on={builtin}
+            sub={usingBuiltin() ? 'Using the bundled relay (fast, pre-deployed)' : 'Off — a custom relay below, if any'}
+            set={(v) => { setBuiltin(v); setSetting('useBuiltin', v); }} />
+          <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'stretch' }}>
+            <div className="fld" style={{ flex: 1, marginBottom: 0 }}>
+              <input placeholder="Your own Cloudflare Worker URL (optional)"
+                value={proxy} onChange={(e) => setProxy(e.target.value)} />
+            </div>
+            <button className="btn ghost sm" onClick={async () => {
+              setSetting('proxyUrl', proxy.trim());
+              setTest('testing');
+              setTest(await testProxy(proxy.trim()));
+            }}>Save & test</button>
+          </div>
+          {test && (
+            <div className="dim sm" style={{ marginTop: 7 }}>
+              {test === 'testing' ? 'Testing…'
+                : test.ok ? `✓ Relay answered in ${test.ms} ms`
+                : `✗ ${test.error || 'did not answer'}`}
+            </div>)}
+          <div className="note" style={{ marginTop: 10 }}>
+            Only for when the built-in relay is blocked on your network. A free
+            personal Worker (100k requests/day) removes every dependency on
+            public proxies.
+          </div>
+        </div>
+      </div>
+
+      <div className="sec" style={{ marginTop: 16, paddingBottom: 30 }}>
+        <div className="dim sm" style={{ letterSpacing: '.08em', textTransform: 'uppercase', marginBottom: 4 }}>About</div>
+        <div style={{ fontSize: 13, lineHeight: 1.6 }}>
+          <b>SurBox</b> 2.4.10 · offline-first music, 320 kbps, no re-encode
+          <div className="dim sm" style={{ marginTop: 4 }}>
+            Playback: local bytes with progressive re-cuts · Equaliser: native
+            DSP in the app, WebAudio on the web · Live radio: deep-buffered HLS
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* The system equaliser — Android's own DSP, in the audio server, costing
  * the WebView nothing. This is what the app uses; the WebAudio panel
  * below it is the browser's version (and, in the app, the place for the
